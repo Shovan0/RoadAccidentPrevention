@@ -1,0 +1,20 @@
+# Node modules
+frontend/node_modules/
+
+# React build
+frontend/build/
+
+# Python venv
+backend/.venv/
+
+# Python cache
+backend/__pycache__/
+
+# uploads / history data (optional)
+backend/uploads/
+backend/history/
+backend/logs/
+
+# OS files
+.DS_Store
+Thumbs.db
