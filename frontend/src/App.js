@@ -1,37 +1,16 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import {
-  Upload,
-  Play,
-  Loader,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  Download,
-  TrendingUp,
-  Car,
-  Activity,
-  Zap,
-  FileVideo,
-  BarChart3,
-  LogOut,
-  User,
-  Home,
-  History as HistoryIcon,
-  Info,
-  Menu,
-  X,
-  Shield,
-  Eye,
-  Trash2,
-  Calendar,
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { 
+  Upload, Play, Loader, AlertTriangle, Download, Car, Activity, Zap, 
+  FileVideo, TrendingUp, LogOut, User, Home, History as HistoryIcon, 
+  Info, Menu, X, Shield, Eye, Trash2, Clock, Settings, Video, RefreshCw, 
+  FileText, Square, Lock 
 } from 'lucide-react';
 
 const API_ENDPOINT = 'http://127.0.0.1:5000';
 
-
-// Utility function to convert data to CSV
+// --- UTILS ---
 const convertToCSVAndDownload = (data, filename) => {
-  if (!data || data.length === 0) return;
+  if (!data || data.length === 0) return alert("No data to download");
   const header = ['ID', 'Label', 'Speed (km/h)', 'Frame', 'Overspeed'];
   const csvRows = [header.join(',')];
   for (const row of data) {
@@ -54,1173 +33,591 @@ const convertToCSVAndDownload = (data, filename) => {
   document.body.removeChild(link);
 };
 
-// Login Page Component
+// --- POLISHED LOGIN PAGE ---
 const LoginPage = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
+  const [isLoading, setIsLoading] = useState(false);
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
-
+    setIsLoading(true);
     try {
-      const response = await fetch(`${API_ENDPOINT}/api/login`, {
+      const res = await fetch(`${API_ENDPOINT}/api/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username, password})
       });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        localStorage.setItem('token', data.access_token);
-        localStorage.setItem('username', data.username);
-        localStorage.setItem('role', data.role);
-        onLogin(data);
-      } else {
-        setError(data.error || 'Login failed');
-      }
-    } catch (err) {
-      setError('Connection error. Please check if the server is running.');
-    } finally {
-      setLoading(false);
-    }
+      const data = await res.json();
+      if(res.ok) {
+         localStorage.setItem('token', data.access_token);
+         localStorage.setItem('username', data.username);
+         localStorage.setItem('role', data.role);
+         onLogin(data);
+      } else { alert("Login Failed: " + (data.error || "Unknown error")); }
+    } catch(err) { alert("Connection Error. Is the backend running?"); }
+    setIsLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center bg-gradient-to-r from-blue-500 to-cyan-500 p-4 rounded-3xl shadow-2xl mb-4">
-            <Shield className="w-12 h-12 text-white" />
+    <div className="min-h-screen flex items-center justify-center relative bg-slate-900 overflow-hidden">
+       {/* Background Decoration */}
+       <div className="absolute inset-0 z-0">
+          <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=2070&auto=format&fit=crop')] bg-cover bg-center opacity-20"></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/90 to-slate-900/80"></div>
+       </div>
+
+       {/* Login Card */}
+       <div className="relative z-10 w-full max-w-md p-8 m-4 bg-slate-800/80 backdrop-blur-xl border border-slate-700/50 rounded-3xl shadow-2xl transform transition-all hover:scale-[1.01]">
+          <div className="text-center mb-8">
+             <div className="mx-auto w-20 h-20 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-6">
+               <Shield className="text-white w-10 h-10" />
+             </div>
+             <h2 className="text-3xl font-bold text-white tracking-tight">Welcome Back</h2>
+             <p className="text-slate-400 mt-2 text-sm">Sign in to SpeedGuard AI Monitor</p>
           </div>
-          <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 mb-2">
-            Traffic Monitor
-          </h1>
-          <p className="text-blue-300">Secure Access Portal</p>
-        </div>
 
-        <div className="bg-slate-800/50 backdrop-blur-xl p-8 rounded-3xl shadow-2xl border border-slate-700/50">
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter username"
-                required
-              />
-            </div>
+             <div className="space-y-4">
+                <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <User className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                    </div>
+                    <input 
+                        className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                        placeholder="Username" 
+                        value={username} 
+                        onChange={e=>setUsername(e.target.value)} 
+                        required
+                    />
+                </div>
+                
+                <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <Lock className="h-5 w-5 text-slate-500 group-focus-within:text-blue-400 transition-colors" />
+                    </div>
+                    <input 
+                        className="w-full pl-12 pr-4 py-4 bg-slate-900/50 border border-slate-600 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                        type="password" 
+                        placeholder="Password" 
+                        value={password} 
+                        onChange={e=>setPassword(e.target.value)} 
+                        required
+                    />
+                </div>
+             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-900/50 border border-slate-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter password"
-                required
-              />
-            </div>
-
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-center text-red-400 text-sm">
-                <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0" />
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold py-3 rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-            >
-              {loading ? (
-                <>
-                  <Loader className="w-5 h-5 mr-2 animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                'Sign In'
-              )}
-            </button>
+             <button 
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-200 transform hover:-translate-y-0.5 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+             >
+                {isLoading ? <Loader className="animate-spin w-5 h-5"/> : "Access Dashboard"}
+             </button>
           </form>
 
-          <div className="mt-6 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
-            <p className="text-xs text-blue-300 font-medium mb-2">Demo Credentials:</p>
-            <p className="text-xs text-slate-400">Admin: admin / admin123</p>
-            <p className="text-xs text-slate-400">User: user / user123</p>
+          <div className="mt-8 pt-6 border-t border-slate-700/50 text-center">
+             <p className="text-xs text-slate-500">Demo Credentials</p>
+             <div className="flex justify-center gap-4 mt-2 text-xs font-mono text-slate-400">
+                <span className="bg-slate-900/50 px-3 py-1 rounded-full border border-slate-700">admin / admin123</span>
+                <span className="bg-slate-900/50 px-3 py-1 rounded-full border border-slate-700">user / user123</span>
+             </div>
           </div>
-        </div>
-      </div>
+       </div>
     </div>
   );
-};
+}
 
-// Navigation Component
-const Navigation = ({ currentPage, setCurrentPage, user, onLogout }) => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+// --- NAVIGATION ---
+const Navigation = ({ currentPage, setCurrentPage, user, onLogout }) => (
+  <nav className="bg-slate-800 p-4 text-white flex justify-between items-center sticky top-0 z-50 border-b border-slate-700 shadow-lg">
+     <div className="flex items-center gap-2 font-bold text-xl"><Activity className="text-blue-400"/> Traffic AI</div>
+     <div className="hidden md:flex gap-2">
+        <NavBtn active={currentPage==='home'} onClick={()=>setCurrentPage('home')} icon={<Home size={18}/>} label="Processing" />
+        <NavBtn active={currentPage==='monitor'} onClick={()=>setCurrentPage('monitor')} icon={<Eye size={18}/>} label="Live Simulation" />
+        <NavBtn active={currentPage==='history'} onClick={()=>setCurrentPage('history')} icon={<HistoryIcon size={18}/>} label="History" />
+        {user?.role==='admin' && <NavBtn active={currentPage==='admin'} onClick={()=>setCurrentPage('admin')} icon={<Shield size={18}/>} label="Admin" />}
+        <NavBtn active={currentPage==='about'} onClick={()=>setCurrentPage('about')} icon={<Info size={18}/>} label="About" />
+     </div>
+     <button onClick={onLogout} className="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded text-sm font-medium transition flex items-center gap-2">
+       <LogOut size={16}/> Logout
+     </button>
+  </nav>
+);
 
-  const navItems = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'monitor', label: 'Live Monitor', icon: Eye },
-    { id: 'history', label: 'History', icon: HistoryIcon },
-    { id: 'about', label: 'About', icon: Info },
-  ];
+const NavBtn = ({active, onClick, icon, label}) => (
+  <button 
+    onClick={onClick} 
+    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${active ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+  >
+    {icon} {label}
+  </button>
+);
 
-  if (user?.role === 'admin') {
-    navItems.splice(1, 0, { id: 'admin', label: 'Admin', icon: Shield });
-  }
+// --- HISTORY PAGE ---
+const HistoryPage = ({token}) => {
+    const [history, setHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-  return (
-    <nav className="bg-slate-800/80 backdrop-blur-xl border-b border-slate-700/50 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center">
-            <div className="bg-gradient-to-r from-blue-500 to-cyan-500 p-2 rounded-xl">
-              <Activity className="w-6 h-6 text-white" />
+    const fetchHistory = useCallback(() => {
+        setLoading(true);
+        fetch(`${API_ENDPOINT}/api/history`, {headers:{Authorization:`Bearer ${token}`}})
+        .then(r => {
+            if (!r.ok) throw new Error("Failed");
+            return r.json();
+        })
+        .then(data => {
+            if (Array.isArray(data)) setHistory(data);
+            else setHistory([]);
+        })
+        .catch(err => setHistory([]))
+        .finally(() => setLoading(false));
+    }, [token]);
+
+    useEffect(() => { fetchHistory(); }, [fetchHistory]);
+    
+    return (
+        <div className="space-y-4">
+            <div className="flex justify-between items-center">
+                <h2 className="text-2xl text-white font-bold flex items-center gap-2"><HistoryIcon className="text-blue-400"/> History</h2>
+                <button onClick={fetchHistory} className="text-slate-400 hover:text-white p-2 rounded hover:bg-slate-800"><RefreshCw size={18}/></button>
             </div>
-            <span className="ml-3 text-xl font-bold text-white hidden sm:block">Traffic AI</span>
-          </div>
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setCurrentPage(item.id)}
-                  className={`flex items-center px-4 py-2 rounded-xl font-medium transition-all ${
-                    currentPage === item.id
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 mr-2" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center space-x-3">
-            <div className="hidden sm:flex items-center bg-slate-700/50 px-3 py-2 rounded-xl">
-              <User className="w-4 h-4 text-blue-400 mr-2" />
-              <span className="text-sm text-white font-medium">{user?.username}</span>
-              {user?.role === 'admin' && (
-                <span className="ml-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full">Admin</span>
-              )}
-            </div>
-            <button
-              onClick={onLogout}
-              className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-medium transition-all"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 text-slate-300 hover:bg-slate-700 rounded-xl"
-            >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          </div>
+            
+            {loading ? <div className="text-center p-10 text-slate-400">Loading history...</div> : 
+             history.length === 0 ? (
+                <div className="text-center p-10 bg-slate-800 rounded-xl border border-slate-700 text-slate-400">
+                    <HistoryIcon className="mx-auto w-12 h-12 mb-2 opacity-50"/>
+                    <p>No history records found.</p>
+                </div>
+            ) : (
+                <div className="grid gap-6 md:grid-cols-2">
+                    {history.map(h => (
+                        <div key={h.id} className="bg-slate-800 p-6 rounded-xl text-white border border-slate-700 shadow-lg">
+                            <div className="flex justify-between items-start mb-2">
+                                <div className="font-bold text-lg truncate flex-1" title={h.original_filename}>{h.original_filename}</div>
+                                <div className="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">User: {h.user}</div>
+                            </div>
+                            <div className="text-sm text-slate-400 mb-4 flex items-center gap-2"><Clock size={14}/> {new Date(h.timestamp).toLocaleString()}</div>
+                            
+                            <div className="grid grid-cols-4 gap-2 text-center text-sm mb-4">
+                                <div className="bg-blue-900/50 p-2 rounded border border-blue-900"><div className="font-bold text-blue-400">{h.total_vehicles}</div> Vehicles</div>
+                                <div className="bg-red-900/50 p-2 rounded border border-red-900"><div className="font-bold text-red-400">{h.total_violations}</div> Violations</div>
+                                <div className="bg-orange-900/50 p-2 rounded border border-orange-900"><div className="font-bold text-orange-400">{h.overspeed_limit}</div> Limit</div>
+                                <div className="bg-green-900/50 p-2 rounded border border-green-900"><div className="font-bold text-green-400">{h.distance_meters}m</div> Dist</div>
+                            </div>
+                            
+                            <div className="flex flex-col gap-2">
+                                {h.download_name && (
+                                    <a href={`${API_ENDPOINT}/download/${h.download_name}`} className="flex items-center justify-center gap-2 w-full text-center bg-blue-600 hover:bg-blue-500 py-2 rounded font-bold transition" download>
+                                        <FileVideo size={16}/> Download Video
+                                    </a>
+                                )}
+                                <div className="flex gap-2">
+                                    <button onClick={()=>convertToCSVAndDownload(h.all_logs, `logs_${h.download_name}.csv`)} className="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 py-2 rounded text-sm transition">
+                                        <FileText size={14}/> All Logs CSV
+                                    </button>
+                                    <button onClick={()=>convertToCSVAndDownload(h.overspeed_summary, `violations_${h.download_name}.csv`)} className="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 py-2 rounded text-sm transition">
+                                        <AlertTriangle size={14} className="text-red-400"/> Violations CSV
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
+    )
+}
 
-        {/* Mobile Navigation */}
-        {mobileMenuOpen && (
-          <div className="md:hidden py-4 space-y-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setCurrentPage(item.id);
-                    setMobileMenuOpen(false);
-                  }}
-                  className={`w-full flex items-center px-4 py-3 rounded-xl font-medium transition-all ${
-                    currentPage === item.id ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'
-                  }`}
-                >
-                  <Icon className="w-5 h-5 mr-3" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </nav>
-  );
-};
-
-// Admin Dashboard Component
-const AdminDashboard = ({ token }) => {
+const AdminDashboard = ({token}) => {
   const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-
   useEffect(() => {
-    fetchStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    fetch(`${API_ENDPOINT}/api/stats`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(setStats)
+      .catch(() => setStats({total_videos:0, total_vehicles:0, total_violations:0, avg_speed:0}));
+  }, [token]);
 
-  const fetchStats = async () => {
-    try {
-      const response = await fetch(`${API_ENDPOINT}/api/stats`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch stats:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader className="w-8 h-8 text-blue-500 animate-spin" />
-      </div>
-    );
-  }
+  if (!stats) return <div className="text-white p-10 text-center">Loading stats...</div>;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-white flex items-center">
-          <Shield className="w-8 h-8 mr-3 text-blue-400" />
-          Admin Dashboard
-        </h1>
-      </div>
-
+      <h1 className="text-3xl font-bold text-white flex items-center gap-3"><Shield className="text-blue-400"/> Admin Dashboard</h1>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-3">
-            <FileVideo className="w-10 h-10 text-white opacity-80" />
-            <span className="text-4xl font-bold text-white">{stats?.total_videos || 0}</span>
-          </div>
-          <p className="text-blue-100 font-medium">Total Videos</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-green-600 to-green-700 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-3">
-            <Car className="w-10 h-10 text-white opacity-80" />
-            <span className="text-4xl font-bold text-white">{stats?.total_vehicles || 0}</span>
-          </div>
-          <p className="text-green-100 font-medium">Total Vehicles</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-red-600 to-red-700 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-3">
-            <AlertTriangle className="w-10 h-10 text-white opacity-80" />
-            <span className="text-4xl font-bold text-white">{stats?.total_violations || 0}</span>
-          </div>
-          <p className="text-red-100 font-medium">Total Violations</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between mb-3">
-            <TrendingUp className="w-10 h-10 text-white opacity-80" />
-            <span className="text-4xl font-bold text-white">{stats?.violation_rate || 0}%</span>
-          </div>
-          <p className="text-purple-100 font-medium">Violation Rate</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-slate-700/50">
-          <h2 className="text-xl font-bold text-white mb-4 flex items-center">
-            <BarChart3 className="w-6 h-6 mr-2 text-blue-400" />
-            Speed Statistics
-          </h2>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center p-4 bg-slate-700/30 rounded-xl">
-              <span className="text-slate-300">Average Speed</span>
-              <span className="text-2xl font-bold text-blue-400">{stats?.avg_speed || 0} km/h</span>
-            </div>
-            <div className="flex justify-between items-center p-4 bg-slate-700/30 rounded-xl">
-              <span className="text-slate-300">Maximum Speed</span>
-              <span className="text-2xl font-bold text-red-400">{stats?.max_speed || 0} km/h</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-slate-700/50">
-          <h2 className="text-xl font-bold text-white mb-4 flex items-center">
-            <Calendar className="w-6 h-6 mr-2 text-green-400" />
-            Recent Activity
-          </h2>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center p-4 bg-slate-700/30 rounded-xl">
-              <span className="text-slate-300">Videos (Last 7 Days)</span>
-              <span className="text-2xl font-bold text-green-400">{stats?.recent_activity || 0}</span>
-            </div>
-            <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
-              <p className="text-sm text-blue-300">
-                System is actively monitoring traffic. All data is being logged and analyzed in real-time.
-              </p>
-            </div>
-          </div>
-        </div>
+        <StatBox label="Total Videos" value={stats.total_videos} icon={<FileVideo/>} color="blue" />
+        <StatBox label="Total Vehicles" value={stats.total_vehicles} icon={<Car/>} color="green" />
+        <StatBox label="Violations" value={stats.total_violations} icon={<AlertTriangle/>} color="red" />
+        <StatBox label="Avg Speed" value={`${stats.avg_speed} km/h`} icon={<Activity/>} color="purple" />
       </div>
     </div>
   );
 };
 
-// History Page Component
-const HistoryPage = ({ token }) => {
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedRecord, setSelectedRecord] = useState(null);
+const StatBox = ({label, value, icon, color}) => (
+  <div className={`bg-slate-800 p-6 rounded-xl border-b-4 border-${color}-500 shadow-xl`}>
+    <div className={`text-${color}-400 mb-2`}>{icon}</div>
+    <div className="text-3xl font-bold text-white">{value}</div>
+    <div className="text-slate-400 text-sm">{label}</div>
+  </div>
+);
+
+// --- ABOUT PAGE ---
+const AboutPage = () => (
+  <div className="space-y-6">
+    <div className="bg-slate-800 p-8 rounded-2xl border border-slate-700 shadow-xl">
+      <h1 className="text-3xl font-bold mb-4 flex items-center gap-3 text-white">
+        <Info className="text-blue-400" size={32} /> 
+        About SpeedGuard AI
+      </h1>
+      <p className="text-slate-300 leading-relaxed text-lg">
+        SpeedGuard AI is a cutting-edge Road Accident Prevention System designed to automate traffic monitoring. 
+        By leveraging the power of <strong>YOLOv8</strong> (You Only Look Once) for object detection and 
+        <strong>ByteTrack</strong> for vehicle tracking, the system provides accurate, real-time speed estimation 
+        and violation logging. Our mission is to reduce road accidents through technology-driven enforcement and analytics.
+      </p>
+    </div>
+
+    <div className="grid md:grid-cols-2 gap-6">
+      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+        <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
+          <Activity className="text-green-400"/> Core Capabilities
+        </h3>
+        <ul className="space-y-2 text-slate-300 list-disc pl-5">
+          <li>Real-time Vehicle Detection & Classification (Car, Bus, Truck, Bike).</li>
+          <li>Physics-based Speed Calculation using Virtual Trap Lines.</li>
+          <li>Live Simulation Mode with Synthetic Traffic Generation.</li>
+          <li>Automated Violation Logging & History Management.</li>
+        </ul>
+      </div>
+      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+        <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
+          <Shield className="text-purple-400"/> Technical Stack
+        </h3>
+        <ul className="space-y-2 text-slate-300 list-disc pl-5">
+          <li><strong>AI Engine:</strong> YOLOv8 + PyTorch</li>
+          <li><strong>Computer Vision:</strong> OpenCV</li>
+          <li><strong>Backend:</strong> Python Flask + JWT Auth</li>
+          <li><strong>Frontend:</strong> React.js + Tailwind CSS</li>
+        </ul>
+      </div>
+    </div>
+
+    <div className="bg-gradient-to-br from-blue-900/50 to-slate-800 p-8 rounded-2xl border border-blue-800/50 shadow-xl">
+      <h2 className="text-2xl font-bold mb-6 text-white flex items-center gap-3">
+        <Zap className="text-yellow-400" size={28}/> Future Roadmap & Innovations
+      </h2>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="bg-slate-900/50 p-5 rounded-lg border border-slate-700 hover:border-blue-500/50 transition">
+          <h4 className="font-bold text-blue-300 mb-2">OCR Integration</h4>
+          <p className="text-sm text-slate-400">Implementing real-time Optical Character Recognition to extract actual number plates from live CCTV footage.</p>
+        </div>
+        <div className="bg-slate-900/50 p-5 rounded-lg border border-slate-700 hover:border-blue-500/50 transition">
+          <h4 className="font-bold text-blue-300 mb-2">SMS & Call Alerts</h4>
+          <p className="text-sm text-slate-400">Integration with Twilio API to send instant SMS warnings or automated calls to vehicle owners upon violation.</p>
+        </div>
+        <div className="bg-slate-900/50 p-5 rounded-lg border border-slate-700 hover:border-blue-500/50 transition">
+          <h4 className="font-bold text-blue-300 mb-2">RTO Database Sync</h4>
+          <p className="text-sm text-slate-400">Connecting with the Regional Transport Office (RTO) API to fetch owner details and issue e-Challans automatically.</p>
+        </div>
+        <div className="bg-slate-900/50 p-5 rounded-lg border border-slate-700 hover:border-blue-500/50 transition">
+          <h4 className="font-bold text-blue-300 mb-2">Accident Detection</h4>
+          <p className="text-sm text-slate-400">Using anomaly detection algorithms to identify crashes or stalled vehicles and alert emergency services.</p>
+        </div>
+        <div className="bg-slate-900/50 p-5 rounded-lg border border-slate-700 hover:border-blue-500/50 transition">
+          <h4 className="font-bold text-blue-300 mb-2">Smart Signal Control</h4>
+          <p className="text-sm text-slate-400">Analyzing traffic density in real-time to optimize traffic light durations and reduce congestion.</p>
+        </div>
+      </div>
+    </div>
+    
+    <div className="text-center text-slate-500 text-sm mt-8">
+      © 2026 Road Accident Prevention System. All Rights Reserved.
+    </div>
+  </div>
+);
+
+// --- HELPER COMPONENT: Log Table ---
+const LogTable = ({title, data, icon, color, showPlate = false}) => (
+    <div className={`bg-slate-800 rounded-2xl border border-${color}-700 overflow-hidden`}>
+       <div className={`p-4 bg-${color}-900/20 font-bold text-white border-b border-slate-700 flex justify-between items-center`}>
+           <span className="flex items-center gap-2">{icon} {title}</span>
+           <span className="text-xs bg-slate-700 px-2 py-1 rounded">{data?.length || 0}</span>
+       </div>
+       <div className="h-64 overflow-y-auto p-2 custom-scrollbar">
+           <table className="w-full text-sm text-left text-slate-300">
+               <thead className="text-xs text-slate-400 uppercase bg-slate-700/30">
+                   <tr>
+                       <th className="px-3 py-2">ID</th>
+                       {showPlate && <th className="px-3 py-2">Plate</th>} 
+                       <th className="px-3 py-2">Type</th>
+                       <th className="px-3 py-2">Speed</th>
+                   </tr>
+               </thead>
+               <tbody>
+                   {[...(data || [])].reverse().map((log, i) => (
+                       <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                           <td className="px-3 py-2">{log.id}</td>
+                           {showPlate && <td className="px-3 py-2 text-white font-mono">{log.plate}</td>}
+                           <td className="px-3 py-2">{log.label}</td>
+                           <td className={`px-3 py-2 font-bold ${log.overspeed?'text-red-400':'text-green-400'}`}>{log.speed} km/h</td>
+                       </tr>
+                   ))}
+               </tbody>
+           </table>
+       </div>
+   </div>
+);
+
+// =========================================================
+//  PROCESSING PAGE (Batch) - LIVE LOGS
+// =========================================================
+const ProcessingPage = ({ token }) => {
+  const [file, setFile] = useState(null);
+  const [streamUrl, setStreamUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false); 
+  const [config, setConfig] = useState({ limit: 60, dist: 20 });
+  const [liveStats, setLiveStats] = useState({ total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] });
+  
+  useEffect(() => {
+     if (!streamUrl) return;
+     const match = streamUrl.match(/\/video_feed\/([^\?]+)/);
+     if (!match) return;
+     const filename = match[1];
+
+     const interval = setInterval(() => {
+        fetch(`${API_ENDPOINT}/api/stream-status/${filename}`)
+           .then(res => res.json())
+           .then(data => setLiveStats(data))
+           .catch(err => console.error("Stats poll error", err));
+     }, 1000); 
+
+     return () => clearInterval(interval);
+  }, [streamUrl]);
+
+  const handleUploadAndStart = async () => {
+     if(!file) return alert("Select a file");
+     setLoading(true);
+     setLiveStats({ total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] }); 
+     
+     const formData = new FormData();
+     formData.append('video', file);
+     
+     try {
+        const res = await fetch(`${API_ENDPOINT}/api/prepare-simulation`, { method: 'POST', body: formData });
+        const data = await res.json();
+        
+        if(res.ok) {
+            const url = `${API_ENDPOINT}/video_feed/${data.filename}?save=true&user=${localStorage.getItem('username')}&limit=${config.limit}&dist=${config.dist}`;
+            setStreamUrl(url);
+            setIsPlaying(true); 
+        } else {
+            alert("Error: " + data.error);
+        }
+     } catch(e) { alert("Error uploading file"); }
+     setLoading(false);
+  };
+
+  return (
+    <div className="space-y-6">
+       <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+          <Home className="text-blue-400"/> Immediate Processing
+       </h1>
+       
+       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-4 rounded-xl shadow-xl text-white">
+             <div className="flex items-center gap-2 text-blue-200 mb-1 text-sm"><Car size={16}/> Total Vehicles</div>
+             <div className="text-3xl font-bold">{liveStats.total_vehicles}</div>
+          </div>
+          <div className="bg-gradient-to-br from-red-600 to-red-800 p-4 rounded-xl shadow-xl text-white">
+             <div className="flex items-center gap-2 text-red-200 mb-1 text-sm"><AlertTriangle size={16}/> Violations</div>
+             <div className="text-3xl font-bold">{liveStats.total_violations}</div>
+          </div>
+          <div className="bg-gradient-to-br from-green-600 to-green-800 p-4 rounded-xl shadow-xl text-white">
+             <div className="flex items-center gap-2 text-green-200 mb-1 text-sm"><Activity size={16}/> Avg Speed</div>
+             <div className="text-3xl font-bold">{liveStats.avg_speed} <span className="text-sm font-normal">km/h</span></div>
+          </div>
+          <div className="bg-gradient-to-br from-purple-600 to-purple-800 p-4 rounded-xl shadow-xl text-white">
+             <div className="flex items-center gap-2 text-purple-200 mb-1 text-sm"><Zap size={16}/> Max Speed</div>
+             <div className="text-3xl font-bold">{liveStats.max_speed} <span className="text-sm font-normal">km/h</span></div>
+          </div>
+       </div>
+
+       <div className="grid lg:grid-cols-3 gap-6">
+          <div className="bg-slate-800 p-6 rounded-2xl h-fit border border-slate-700 shadow-xl">
+             <h3 className="text-white font-bold mb-4 flex items-center gap-2"><Settings size={16}/> Configuration</h3>
+             <div className="space-y-3 mb-6">
+                <div>
+                   <label className="text-xs text-slate-400">Speed Limit (km/h)</label>
+                   <input type="number" value={config.limit} onChange={e=>setConfig({...config, limit:e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm"/>
+                </div>
+                <div>
+                   <label className="text-xs text-slate-400">Distance (meters)</label>
+                   <input type="number" value={config.dist} onChange={e=>setConfig({...config, dist:e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm"/>
+                </div>
+             </div>
+             <div className="border-2 border-dashed border-slate-600 rounded-xl p-8 text-center mb-6 hover:bg-slate-700/50 transition cursor-pointer relative">
+                <input type="file" accept="video/*" onChange={e=>setFile(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"/>
+                <FileVideo className="w-12 h-12 text-blue-400 mx-auto mb-2"/>
+                <div className="text-white font-bold">{file ? file.name : "Select Video"}</div>
+             </div>
+             <button onClick={handleUploadAndStart} disabled={loading||!file||isPlaying} className="w-full bg-blue-600 py-3 rounded-xl font-bold text-white hover:bg-blue-500 disabled:opacity-50 transition shadow-lg flex justify-center items-center">
+                {loading ? <Loader className="animate-spin mx-auto"/> : isPlaying ? <><Loader className="animate-spin mr-2 w-4 h-4"/> Processing...</> : "Start Processing"}
+             </button>
+          </div>
+          <div className="lg:col-span-2 bg-black rounded-2xl overflow-hidden min-h-[400px] flex items-center justify-center relative border border-slate-700 shadow-2xl">
+             {streamUrl ? (
+                <>
+                   <img src={streamUrl} alt="Stream" className="w-full h-full object-contain" onError={() => setIsPlaying(false)} />
+                   {isPlaying && <div className="absolute top-4 left-4 bg-red-600 px-3 py-1 rounded-full text-xs font-bold text-white animate-pulse flex items-center gap-2 shadow-lg"><div className="w-2 h-2 bg-white rounded-full"></div> REC</div>}
+                   <div className="absolute bottom-4 left-0 w-full text-center"><span className="bg-black/70 text-white px-4 py-1 rounded-full text-sm backdrop-blur-sm border border-white/10">{isPlaying ? "Results are being saved to History..." : "Processing Complete."}</span></div>
+                </>
+             ) : (
+                <div className="text-slate-600 text-center"><Play className="w-16 h-16 mx-auto mb-4 opacity-50"/><div>Waiting for video...</div></div>
+             )}
+          </div>
+       </div>
+
+       {/* LOG TABLES */}
+       <div className="grid lg:grid-cols-2 gap-6">
+           <LogTable title="Total Vehicle Logs" data={liveStats.all_logs} icon={<Car className="text-green-400"/>} color="slate" />
+           <LogTable title="Violation Logs" data={liveStats.overspeed_summary} icon={<AlertTriangle className="text-red-400"/>} color="red" />
+       </div>
+    </div>
+  );
+};
+
+// =========================================================
+//  UPDATED: LiveMonitorPage (Virtual Simulation)
+// =========================================================
+const LiveMonitorPage = ({ token }) => {
+  const [streamUrl, setStreamUrl] = useState(null);
+  const [liveStats, setLiveStats] = useState({ total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] });
+  const [config, setConfig] = useState({ limit: 60, dist: 20 });
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
-    fetchHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const fetchHistory = async () => {
-    try {
-      const response = await fetch(`${API_ENDPOINT}/api/history`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setHistory(data);
-      }
-    } catch (err) {
-      console.error('Failed to fetch history:', err);
-    } finally {
-      setLoading(false);
-    }
+     if (!streamUrl) return;
+     const filename = "virtual_simulation";
+     const interval = setInterval(() => {
+        fetch(`${API_ENDPOINT}/api/stream-status/${filename}`)
+           .then(res => res.json())
+           .then(data => setLiveStats(data))
+           .catch(err => console.error(err));
+     }, 1000);
+     return () => clearInterval(interval);
+  }, [streamUrl]);
+  
+  const handleStart = async () => {
+      setIsPlaying(true);
+      setLiveStats({ total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] });
+      const url = `${API_ENDPOINT}/video_feed/virtual_simulation?save=false&limit=${config.limit}&dist=${config.dist}`;
+      setStreamUrl(url);
   };
 
-  const deleteRecord = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this record?')) return;
-
-    try {
-      const response = await fetch(`${API_ENDPOINT}/api/history/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        setHistory(history.filter((h) => h.id !== id));
-        setSelectedRecord(null);
-      }
-    } catch (err) {
-      console.error('Failed to delete record:', err);
-    }
+  const handleStop = () => {
+      setStreamUrl(null);
+      setIsPlaying(false);
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader className="w-8 h-8 text-blue-500 animate-spin" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-white flex items-center">
-        <HistoryIcon className="w-8 h-8 mr-3 text-blue-400" />
-        Processing History
-      </h1>
+        <h1 className="text-3xl font-bold text-white flex items-center gap-3"><Eye className="text-blue-400"/> Virtual Simulation</h1>
+        
+        {/* STATS */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatBox label="Total Vehicles" value={liveStats.total_vehicles} icon={<Car/>} color="blue" />
+          <StatBox label="Violations" value={liveStats.total_violations} icon={<AlertTriangle/>} color="red" />
+          <StatBox label="Avg Speed" value={liveStats.avg_speed} icon={<Activity/>} color="green" />
+          <StatBox label="Max Speed" value={liveStats.max_speed} icon={<Zap/>} color="purple" />
+       </div>
 
-      {history.length === 0 ? (
-        <div className="bg-slate-800/50 backdrop-blur-xl p-12 rounded-3xl shadow-2xl border border-slate-700/50 text-center">
-          <HistoryIcon className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-          <p className="text-slate-400 text-lg">No processing history yet</p>
-          <p className="text-slate-500 text-sm mt-2">Upload and process videos to see them here</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {history.map((record) => (
-            <div
-              key={record.id}
-              className="bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-slate-700/50 hover:border-blue-500/50 transition-all"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-white mb-1">{record.original_filename}</h3>
-                  <p className="text-sm text-slate-400">{new Date(record.timestamp).toLocaleString()}</p>
-                  <p className="text-xs text-slate-500 mt-1">By: {record.user}</p>
-                </div>
-                <button
-                  onClick={() => deleteRecord(record.id)}
-                  className="p-2 text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 text-center">
-                  <p className="text-2xl font-bold text-blue-400">{record.total_vehicles}</p>
-                  <p className="text-xs text-slate-400">Vehicles</p>
-                </div>
-                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-center">
-                  <p className="text-2xl font-bold text-red-400">{record.total_violations}</p>
-                  <p className="text-xs text-slate-400">Violations</p>
-                </div>
-                <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-center">
-                  <p className="text-2xl font-bold text-green-400">{record.overspeed_limit}</p>
-                  <p className="text-xs text-slate-400">Limit (km/h)</p>
-                </div>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedRecord(record)}
-                  className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition-all"
-                >
-                  <Eye className="w-4 h-4 mr-2" />
-                  View Details
-                </button>
-                {record.download_name && (
-                  <button
-                    onClick={async () => {
-                      try {
-                        const response = await fetch(`${API_ENDPOINT}/download/${record.download_name}`, {
-                          headers: { Authorization: `Bearer ${token}` },
-                        });
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = record.download_name;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                      } catch (err) {
-                        console.error('Download failed:', err);
-                      }
-                    }}
-                    className="flex items-center justify-center px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-xl font-medium transition-all"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Detail Modal */}
-      {selectedRecord && (
-        <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setSelectedRecord(null)}
-        >
-          <div
-            className="bg-slate-800 rounded-3xl shadow-2xl border border-slate-700 max-w-4xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-slate-800 border-b border-slate-700 p-6 flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-white">Record Details</h2>
-              <button onClick={() => setSelectedRecord(null)} className="p-2 hover:bg-slate-700 rounded-xl">
-                <X className="w-6 h-6 text-slate-400" />
-              </button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div>
-                <h3 className="text-lg font-bold text-white mb-3">Vehicle Logs</h3>
-                <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-                  {selectedRecord.all_logs?.map((log, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-3 rounded-xl flex items-center justify-between ${
-                        log.overspeed
-                          ? 'bg-red-500/10 border border-red-500/30'
-                          : 'bg-green-500/10 border border-green-500/30'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        {log.overspeed ? (
-                          <AlertTriangle className="w-5 h-5 text-red-400 mr-3" />
-                        ) : (
-                          <CheckCircle className="w-5 h-5 text-green-400 mr-3" />
-                        )}
-                        <div>
-                          <p
-                            className={`font-bold ${
-                              log.overspeed ? 'text-red-400' : 'text-green-400'
-                            }`}
-                          >
-                            ID: {log.id} • {log.label}
-                          </p>
-                          <p className="text-xs text-slate-400">Frame: {log.frame}</p>
-                        </div>
-                      </div>
-                      <p
-                        className={`text-xl font-bold ${
-                          log.overspeed ? 'text-red-400' : 'text-green-400'
-                        }`}
-                      >
-                        {log.speed} km/h
-                      </p>
+        <div className="grid lg:grid-cols-3 gap-6">
+            <div className="bg-slate-800 p-6 rounded-2xl h-fit border border-slate-700 shadow-xl">
+                <div className="space-y-3 mb-6">
+                    <div>
+                        <label className="text-xs text-slate-400">Speed Limit (km/h)</label>
+                        <input type="number" value={config.limit} onChange={e=>setConfig({...config, limit:e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm"/>
                     </div>
-                  ))}
+                    <div>
+                        <label className="text-xs text-slate-400">Distance (meters)</label>
+                        <input type="number" value={config.dist} onChange={e=>setConfig({...config, dist:e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm"/>
+                    </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// About Page Component
-const AboutPage = () => {
-  return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-white flex items-center">
-        <Info className="w-8 h-8 mr-3 text-blue-400" />
-        About This System
-      </h1>
-
-      <div className="bg-slate-800/50 backdrop-blur-xl p-8 rounded-3xl shadow-2xl border border-slate-700/50">
-        <h2 className="text-2xl font-bold text-white mb-4">AI Traffic Speed Detection System</h2>
-        <p className="text-slate-300 leading-relaxed mb-6">
-          This advanced traffic monitoring system uses YOLOv8 neural networks to detect and track vehicles in
-          real-time, calculating their speeds and identifying violations. The system provides comprehensive
-          analytics and reporting capabilities for traffic management authorities.
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-6">
-            <Zap className="w-10 h-10 text-blue-400 mb-3" />
-            <h3 className="text-lg font-bold text-white mb-2">Real-time Detection</h3>
-            <p className="text-slate-400 text-sm">
-              Advanced AI algorithms process video feeds in real-time, detecting multiple vehicle types
-              simultaneously.
-            </p>
-          </div>
-
-          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-6">
-            <BarChart3 className="w-10 h-10 text-green-400 mb-3" />
-            <h3 className="text-lg font-bold text-white mb-2">Analytics Dashboard</h3>
-            <p className="text-slate-400 text-sm">
-              Comprehensive statistics and historical data analysis for informed decision-making.
-            </p>
-          </div>
-
-          <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-6">
-            <Shield className="w-10 h-10 text-purple-400 mb-3" />
-            <h3 className="text-lg font-bold text-white mb-2">Secure Platform</h3>
-            <p className="text-slate-400 text-sm">
-              Role-based access control ensures data security and proper authorization.
-            </p>
-          </div>
-
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6">
-            <AlertTriangle className="w-10 h-10 text-red-400 mb-3" />
-            <h3 className="text-lg font-bold text-white mb-2">Violation Detection</h3>
-            <p className="text-slate-400 text-sm">
-              Automatic identification and logging of speed violations with detailed records.
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-slate-700/30 rounded-xl p-6">
-          <h3 className="text-lg font-bold text-white mb-3">Technical Specifications</h3>
-          <ul className="space-y-2 text-slate-300 text-sm">
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
-              Real-time Speed Calculation
-            </li>
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
-              Support for Multiple Video Formats (MP4, AVI, MOV, MKV)
-            </li>
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
-              CSV Export for Data Analysis
-            </li>
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
-              Historical Data Management
-            </li>
-            {/* Added these two lines properly inside the UL */}
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
-              YOLOv8 Object Detection Model
-            </li>
-            <li className="flex items-center">
-              <CheckCircle className="w-4 h-4 text-green-400 mr-2" />
-              ByteTrack Multi-object Tracking
-            </li>
-          </ul>
-        </div>
-
-        <div className="mt-6 pt-6 border-t border-slate-700">
-          <p className="text-slate-400 text-sm text-center">
-            © 2024 AI Traffic Speed Detection System. Powered by YOLOv8 and React.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Main Processing Page Component - Now receives and updates shared state
-const ProcessingPage = ({ token, processingState, setProcessingState }) => {
-  const { file, previewUrl, isProcessing, progress, logs, statusMessage, downloadLink } = processingState;
-
-  const overspeedRecords = useMemo(() => logs.filter((log) => log.overspeed), [logs]);
-  const avgSpeed = useMemo(() => {
-    if (logs.length === 0) return 0;
-    const total = logs.reduce((sum, log) => sum + (log.speed || 0), 0);
-    return (total / logs.length).toFixed(1);
-  }, [logs]);
-  const maxSpeed = useMemo(() => {
-    if (logs.length === 0) return 0;
-    return Math.max(...logs.map((log) => log.speed || 0)).toFixed(1);
-  }, [logs]);
-
-  const handleFileChange = (event) => {
-    const selectedFile = event.target.files[0];
-    if (selectedFile) {
-      setProcessingState({
-        file: selectedFile,
-        previewUrl: URL.createObjectURL(selectedFile),
-        progress: 0,
-        logs: [],
-        isProcessing: false,
-        downloadLink: null,
-        statusMessage: `Video loaded: ${selectedFile.name}`,
-      });
-    }
-  };
-
-  const handleProcessing = useCallback(async () => {
-    if (!file) {
-      setProcessingState((prev) => ({
-        ...prev,
-        statusMessage: 'Please upload a video file first.',
-      }));
-      return;
-    }
-
-    setProcessingState((prev) => ({
-      ...prev,
-      isProcessing: true,
-      logs: [],
-      progress: 5,
-      downloadLink: null,
-      statusMessage: 'Processing video with AI detection...',
-    }));
-
-    const formData = new FormData();
-    formData.append('video', file);
-
-    try {
-      const response = await fetch(`${API_ENDPOINT}/upload-and-process`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || `Server responded with status ${response.status}`);
-      }
-
-      const result = await response.json();
-      const serverOrigin = new URL(API_ENDPOINT).origin;
-      const fullDownloadUrl = result.output_video_url ? serverOrigin + result.output_video_url : null;
-
-      setProcessingState((prev) => ({
-        ...prev,
-        progress: 100,
-        statusMessage: '✅ Processing complete! Analysis ready.',
-        logs: result.all_logs || [],
-        downloadLink: fullDownloadUrl,
-        isProcessing: false,
-      }));
-    } catch (error) {
-      console.error('Processing failed:', error);
-      setProcessingState((prev) => ({
-        ...prev,
-        statusMessage: `❌ Error: ${error.message}`,
-        progress: 0,
-        isProcessing: false,
-      }));
-    }
-  }, [file, token, setProcessingState]);
-
-  return (
-    <div className="space-y-6">
-      {/* Statistics Cards */}
-      {logs.length > 0 && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-5 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
-              <Car className="w-8 h-8 text-white opacity-80" />
-              <span className="text-3xl font-bold text-white">{logs.length}</span>
-            </div>
-            <p className="text-blue-100 text-sm font-medium">Total Vehicles</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-5 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
-              <AlertTriangle className="w-8 h-8 text-white opacity-80" />
-              <span className="text-3xl font-bold text-white">{overspeedRecords.length}</span>
-            </div>
-            <p className="text-red-100 text-sm font-medium">Violations</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-5 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
-              <TrendingUp className="w-8 h-8 text-white opacity-80" />
-              <span className="text-3xl font-bold text-white">{avgSpeed}</span>
-            </div>
-            <p className="text-green-100 text-sm font-medium">Avg Speed (km/h)</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-5 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
-              <Zap className="w-8 h-8 text-white opacity-80" />
-              <span className="text-3xl font-bold text-white">{maxSpeed}</span>
-            </div>
-            <p className="text-purple-100 text-sm font-medium">Max Speed (km/h)</p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Controls & Preview */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Control Panel */}
-          <div className="bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-slate-700/50">
-            <h2 className="text-2xl font-bold mb-6 text-white flex items-center">
-              <div className="bg-blue-500/20 p-2 rounded-xl mr-3">
-                <Clock className="w-6 h-6 text-blue-400" />
-              </div>
-              Processing Controls
-            </h2>
-
-            <label className="block mb-6 group cursor-pointer">
-              <div className="relative border-2 border-dashed border-slate-600 hover:border-blue-500 rounded-2xl p-8 transition-all duration-300 bg-slate-900/30 hover:bg-slate-900/50">
-                <input
-                  type="file"
-                  accept="video/mp4,video/avi,video/mov,video/mkv"
-                  onChange={handleFileChange}
-                  disabled={isProcessing}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <div className="flex flex-col items-center">
-                  <div className="bg-blue-500/20 p-4 rounded-full mb-3 group-hover:scale-110 transition-transform">
-                    <FileVideo className="w-8 h-8 text-blue-400" />
-                  </div>
-                  <p className="text-white font-semibold mb-1">
-                    {file ? file.name : 'Click to upload video'}
-                  </p>
-                  <p className="text-slate-400 text-sm">Supports MP4, AVI, MOV, MKV formats</p>
-                </div>
-              </div>
-            </label>
-
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-2">
-                <p
-                  className={`text-sm font-medium ${
-                    isProcessing ? 'text-blue-400' : 'text-slate-300'
-                  }`}
-                >
-                  {statusMessage}
-                </p>
-                <span className="text-sm font-bold text-blue-400">{progress}%</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-3 overflow-hidden shadow-inner">
-                <div
-                  className={`h-3 rounded-full transition-all duration-300 ${
-                    progress === 100
-                      ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-                      : isProcessing
-                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 animate-pulse'
-                      : 'bg-slate-600'
-                  }`}
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={handleProcessing}
-                disabled={!file || isProcessing}
-                className={`flex-1 flex justify-center items-center px-6 py-4 rounded-2xl font-bold text-white shadow-lg transition-all duration-300 transform hover:scale-[1.02] ${
-                  !file || isProcessing
-                    ? 'bg-slate-700 cursor-not-allowed opacity-50'
-                    : 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-blue-500/50'
-                }`}
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader className="w-5 h-5 mr-2 animate-spin" />
-                    Processing...
-                  </>
+                {/* START / STOP BUTTONS */}
+                {!isPlaying ? (
+                    <button 
+                        onClick={handleStart} 
+                        className="w-full bg-green-600 hover:bg-green-500 py-3 rounded-xl font-bold text-white transition shadow-lg flex justify-center items-center"
+                    >
+                        <Play size={18} className="mr-2"/> Start Virtual Simulation
+                    </button>
                 ) : (
-                  <>
-                    <Play className="w-5 h-5 mr-2" />
-                    Start Analysis
-                  </>
-                )}
-              </button>
-
-              {downloadLink && (
-                <button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch(downloadLink, {
-                        headers: { Authorization: `Bearer ${token}` },
-                      });
-                      const blob = await response.blob();
-                      const url = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = downloadLink.split('/').pop();
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(url);
-                      document.body.removeChild(a);
-                    } catch (err) {
-                      console.error('Download failed:', err);
-                    }
-                  }}
-                  className="flex items-center justify-center px-6 py-4 rounded-2xl font-bold text-white bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 shadow-lg shadow-green-500/50 transition-all duration-300 transform hover:scale-[1.02]"
-                >
-                  <Download className="w-5 h-5 mr-2" />
-                  Download
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Video Preview */}
-          <div className="bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-slate-700/50">
-            <h2 className="text-2xl font-bold mb-4 text-white flex items-center">
-              <div className="bg-purple-500/20 p-2 rounded-xl mr-3">
-                <FileVideo className="w-6 h-6 text-purple-400" />
-              </div>
-              Video Preview
-            </h2>
-            <div className="aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-inner border border-slate-700">
-              {previewUrl ? (
-                <video controls src={previewUrl} className="w-full h-full object-cover"></video>
-              ) : (
-                <div className="flex flex-col items-center justify-center w-full h-full text-slate-500">
-                  <Upload className="w-16 h-16 mb-4 opacity-50" />
-                  <p className="text-lg font-medium">Upload a video to preview</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column - Logs & Violations */}
-        <div className="lg:col-span-1 space-y-6">
-          {/* All Vehicle Logs */}
-          <div className="bg-slate-800/50 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border border-slate-700/50">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white flex items-center">
-                <div className="bg-green-500/20 p-2 rounded-xl mr-2">
-                  <Activity className="w-5 h-5 text-green-400" />
-                </div>
-                Vehicle Logs
-              </h2>
-              <button
-                onClick={() => convertToCSVAndDownload(logs, 'all_vehicle_logs.csv')}
-                disabled={logs.length === 0}
-                className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-30 flex items-center transition-colors font-medium"
-              >
-                <Download className="w-3 h-3 mr-1" /> CSV
-              </button>
-            </div>
-
-            <div className="h-72 overflow-y-auto bg-slate-900/50 rounded-xl p-3 text-xs font-mono border border-slate-700 custom-scrollbar">
-              {logs.length === 0 ? (
-                <p className="text-slate-500 text-center py-8">Awaiting analysis...</p>
-              ) : (
-                logs.map((log, index) => (
-                  <div
-                    key={index}
-                    className={`py-2 px-3 mb-2 rounded-lg flex items-start ${
-                      log.overspeed
-                        ? 'bg-red-500/10 border border-red-500/30'
-                        : 'bg-green-500/10 border border-green-500/30'
-                    }`}
-                  >
-                    {log.overspeed ? (
-                      <AlertTriangle className="w-4 h-4 text-red-400 mr-2 flex-shrink-0 mt-0.5" />
-                    ) : (
-                      <CheckCircle className="w-4 h-4 text-green-400 mr-2 flex-shrink-0 mt-0.5" />
-                    )}
-                    <div className="flex-1">
-                      <div
-                        className={`font-bold ${
-                          log.overspeed ? 'text-red-400' : 'text-green-400'
-                        }`}
-                      >
-                        ID:{log.id} • {log.label}
-                      </div>
-                      <div className="text-slate-400 text-[10px]">
-                        {typeof log.speed === 'number'
-                          ? log.speed.toFixed(2)
-                          : log.speed}{' '}
-                        km/h • Frame {log.frame}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Overspeed Violations */}
-          <div className="bg-gradient-to-br from-red-900/30 to-orange-900/30 backdrop-blur-xl p-6 rounded-3xl shadow-2xl border-2 border-red-500/30">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-white flex items-center">
-                <div className="bg-red-500/30 p-2 rounded-xl mr-2">
-                  <AlertTriangle className="w-5 h-5 text-red-400" />
-                </div>
-                Violations ({overspeedRecords.length})
-              </h2>
-              <button
-                onClick={() => convertToCSVAndDownload(overspeedRecords, 'overspeed_violations.csv')}
-                disabled={overspeedRecords.length === 0}
-                className="text-xs text-red-400 hover:text-red-300 disabled:opacity-30 flex items-center transition-colors font-medium"
-              >
-                <Download className="w-3 h-3 mr-1" /> CSV
-              </button>
-            </div>
-
-            <div className="h-72 overflow-y-auto custom-scrollbar">
-              {overspeedRecords.length === 0 ? (
-                <div className="text-center py-12">
-                  <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-3 opacity-50" />
-                  <p className="text-slate-400 font-medium">No violations detected</p>
-                  <p className="text-slate-500 text-xs mt-1">All vehicles within speed limit</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {overspeedRecords.map((record) => (
-                    <div
-                      key={record.id}
-                      className="p-4 bg-red-500/10 border-2 border-red-500/30 rounded-xl shadow-lg backdrop-blur-sm hover:bg-red-500/20 transition-all"
+                    <button 
+                        onClick={handleStop} 
+                        className="w-full bg-red-600 hover:bg-red-500 py-3 rounded-xl font-bold text-white transition shadow-lg flex justify-center items-center animate-pulse"
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <p className="font-bold text-red-400 text-sm">{record.label}</p>
-                          <p className="text-xs text-slate-400">ID: {record.id}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-black text-red-400">
-                            {typeof record.speed === 'number'
-                              ? record.speed.toFixed(1)
-                              : record.speed}
-                          </p>
-                          <p className="text-xs text-slate-400">km/h</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-red-500/20">
-                        <span>Frame: {record.frame}</span>
-                        <span className="text-red-400 font-semibold">⚠ VIOLATION</span>
-                      </div>
-                    </div>
-                  ))}
+                        <Square size={18} className="mr-2 fill-current"/> Stop Simulation
+                    </button>
+                )}
+                
+                <div className="mt-4 p-3 bg-blue-900/30 text-blue-200 text-xs rounded border border-blue-900/50">
+                   This mode generates synthetic traffic data with AI logic: Vehicles spawn in lanes, accelerate, and detection occurs only when crossing start/end lines.
                 </div>
-              )}
             </div>
-          </div>
+            
+            {/* VIDEO DISPLAY */}
+            <div className="lg:col-span-2 bg-black rounded-2xl overflow-hidden min-h-[400px] flex items-center justify-center border border-slate-700 shadow-2xl relative">
+                {streamUrl ? (
+                    <>
+                        <img 
+                            src={streamUrl} 
+                            alt="Stream" 
+                            className="w-full h-full object-contain"
+                            onError={() => setIsPlaying(false)}
+                        />
+                        <div className="absolute top-4 left-4 bg-purple-600 px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg flex items-center gap-2">
+                            <div className="w-2 h-2 bg-white rounded-full animate-ping"></div> VIRTUAL LIVE
+                        </div>
+                    </>
+                ) : (
+                    <div className="text-slate-600 flex flex-col items-center"><Video className="w-16 h-16 mb-4 opacity-50"/>Ready to start simulation</div>
+                )}
+            </div>
         </div>
-      </div>
+
+        {/* LOG TABLES (Added for Simulation too, WITH PLATES) */}
+        <div className="grid lg:grid-cols-2 gap-6">
+           <LogTable title="Virtual Vehicle Logs" data={liveStats.all_logs} icon={<Car className="text-green-400"/>} color="slate" showPlate={true} />
+           <LogTable title="Virtual Violation Logs" data={liveStats.overspeed_summary} icon={<AlertTriangle className="text-red-400"/>} color="red" showPlate={true} />
+        </div>
     </div>
   );
 };
 
-// Main App Component
+// --- MAIN APP ---
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState(null);
   const [currentPage, setCurrentPage] = useState('home');
-  const [loading, setLoading] = useState(true);
-
-  // Shared processing state that persists across page navigation
-  const [processingState, setProcessingState] = useState({
-    file: null,
-    previewUrl: null,
-    isProcessing: false,
-    progress: 0,
-    logs: [],
-    statusMessage: 'Ready to process traffic video',
-    downloadLink: null,
-  });
 
   useEffect(() => {
-    // Check if user is already logged in
-    const token = localStorage.getItem('token');
-    const username = localStorage.getItem('username');
-
-    if (token && username) {
-      // Verify token
-      fetch(`${API_ENDPOINT}/api/verify-token`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data?.username && data?.role) {
-            setUser({ username: data.username, role: data.role });
-            setIsAuthenticated(true);
-          } else {
-            localStorage.removeItem('token');
-            localStorage.removeItem('username');
-            localStorage.removeItem('role');
-          }
-        })
-        .catch(() => {
-          // Token invalid, clear storage
-          localStorage.removeItem('token');
-          localStorage.removeItem('username');
-          localStorage.removeItem('role');
-        })
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
+     const token = localStorage.getItem('token');
+     const u = localStorage.getItem('username');
+     if(token && u) { setUser({username:u, role:localStorage.getItem('role')}); setIsAuthenticated(true); }
   }, []);
 
-  const handleLogin = (userData) => {
-    setUser({ username: userData.username, role: userData.role });
-    setIsAuthenticated(true);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('username');
-    localStorage.removeItem('role');
-    setIsAuthenticated(false);
-    setUser(null);
-    setCurrentPage('home');
-    // Reset processing state on logout
-    setProcessingState({
-      file: null,
-      previewUrl: null,
-      isProcessing: false,
-      progress: 0,
-      logs: [],
-      statusMessage: 'Ready to process traffic video',
-      downloadLink: null,
-    });
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
-        <Loader className="w-12 h-12 text-blue-500 animate-spin" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
-  const token = localStorage.getItem('token');
+  if (!isAuthenticated) return <LoginPage onLogin={(u)=>{setUser({username:u.username, role:u.role}); setIsAuthenticated(true);}} />;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <Navigation
-        currentPage={currentPage}
-        setCurrentPage={setCurrentPage}
-        user={user}
-        onLogout={handleLogout}
-      />
-
+    <div className="min-h-screen bg-slate-900 text-white font-sans">
+      <Navigation currentPage={currentPage} setCurrentPage={setCurrentPage} user={user} onLogout={()=>{setIsAuthenticated(false); localStorage.clear();}} />
       <div className="max-w-7xl mx-auto p-4 sm:p-8">
-        {currentPage === 'home' && (
-          <>
-            <header className="text-center mb-8 relative">
-              <div className="absolute inset-0 bg-blue-500 opacity-10 blur-3xl"></div>
-              <div className="relative">
-                <div className="flex items-center justify-center mb-4">
-                  <div className="bg-gradient-to-r from-blue-500 to-cyan-500 p-3 rounded-2xl shadow-lg">
-                    <Activity className="w-10 h-10 text-white" />
-                  </div>
-                </div>
-                <h1 className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-500 tracking-tight mb-3">
-                  AI Traffic Speed Detection
-                </h1>
-                <p className="text-blue-300 text-lg font-medium">Powered by YOLOv8 Neural Network</p>
-                <div className="flex items-center justify-center gap-4 mt-4 text-sm text-blue-400">
-                  <span className="flex items-center gap-1">
-                    <Zap className="w-4 h-4" /> Real-time Analysis
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Car className="w-4 h-4" /> Multi-vehicle Tracking
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <BarChart3 className="w-4 h-4" /> Statistical Insights
-                  </span>
-                </div>
-              </div>
-            </header>
-            <ProcessingPage
-              token={token}
-              processingState={processingState}
-              setProcessingState={setProcessingState}
-            />
-          </>
-        )}
-
-        {currentPage === 'admin' && user?.role === 'admin' && <AdminDashboard token={token} />}
-
-        {currentPage === 'monitor' && (
-          <ProcessingPage
-            token={token}
-            processingState={processingState}
-            setProcessingState={setProcessingState}
-          />
-        )}
-
-        {currentPage === 'history' && <HistoryPage token={token} />}
-
+        {currentPage === 'home' && <ProcessingPage token={localStorage.getItem('token')} />}
+        {currentPage === 'monitor' && <LiveMonitorPage token={localStorage.getItem('token')} />}
+        {currentPage === 'history' && <HistoryPage key={user?.username} token={localStorage.getItem('token')} />}
+        {currentPage === 'admin' && <AdminDashboard token={localStorage.getItem('token')} />}
         {currentPage === 'about' && <AboutPage />}
       </div>
-
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(15, 23, 42, 0.5);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(59, 130, 246, 0.5);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(59, 130, 246, 0.7);
-        }
-      `}</style>
     </div>
   );
 };

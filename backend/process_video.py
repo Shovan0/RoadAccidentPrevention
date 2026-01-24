@@ -1,291 +1,368 @@
+# process_video.py
 import os
 import cv2
 from ultralytics import YOLO
 import numpy as np
 from datetime import datetime
+import random
+import string
+import time
 
-def process_video_for_speed(video_path, overspeed_limit_kmh=60, distance_meters=30.0):
-    """
-    Processes a video file to detect vehicle speeds using YOLOv8 tracking.
-    Speed is calculated based on time taken to travel between two horizontal lines.
-
-    Args:
-        video_path: Path to input video file
-        overspeed_limit_kmh: Speed limit threshold in km/h (default: 60)
-        distance_meters: Distance between start and end lines in meters (default: 30)
-
-    Returns:
-        dict with:
-          - output_video_path: Path to processed video
-          - overspeed_summary: List of overspeed violations
-          - all_logs: List of all detected vehicles
-    """
-    if not video_path or not os.path.isfile(video_path):
-        return {"error": f"Input video not found at: {video_path}"}
-
-    # -------------------------------
-    # 1) Load YOLO model with PyTorch 2.6+ compatibility
-    # -------------------------------
+# -------------------------------
+# Helper: Load Model Safely
+# -------------------------------
+def load_yolo_model():
     try:
         import torch
-        from ultralytics import YOLO
-
-        # Comprehensive list of PyTorch classes that need to be allowlisted
-        safe_globals_list = []
-        
-        # Core PyTorch module classes
-        torch_classes = [
-            'torch.nn.modules.conv.Conv2d',
-            'torch.nn.modules.pooling.MaxPool2d',
-            'torch.nn.modules.batchnorm.BatchNorm2d',
-            'torch.nn.modules.activation.SiLU',
-            'torch.nn.modules.activation.ReLU',
-            'torch.nn.modules.activation.Sigmoid',
-            'torch.nn.modules.linear.Linear',
-            'torch.nn.modules.container.Sequential',
-            'torch.nn.modules.container.ModuleList',
-            'torch.nn.modules.pooling.AdaptiveAvgPool2d',
-            'torch.nn.modules.upsampling.Upsample',
-            'torch.nn.modules.sparse.Embedding',
-            'torch.nn.parameter.Parameter',
-            'torch._utils._rebuild_parameter',
-            'torch._utils._rebuild_tensor_v2',
-            'collections.OrderedDict',
-        ]
-        
-        # Ultralytics-specific classes
-        ultralytics_classes = [
-            'ultralytics.nn.tasks.DetectionModel',
-            'ultralytics.nn.modules.conv.Conv',
-            'ultralytics.nn.modules.block.C2f',
-            'ultralytics.nn.modules.block.SPPF',
-            'ultralytics.nn.modules.block.Bottleneck',
-            'ultralytics.nn.modules.head.Detect',
-        ]
-        
-        # Try to import and add actual class objects
-        for class_path in torch_classes + ultralytics_classes:
-            try:
-                parts = class_path.rsplit('.', 1)
-                if len(parts) == 2:
-                    module_name, class_name = parts
-                    module = __import__(module_name, fromlist=[class_name])
-                    cls = getattr(module, class_name, None)
-                    if cls:
-                        safe_globals_list.append(cls)
-            except Exception:
-                pass
-        
-        # Register safe globals with PyTorch
-        if hasattr(torch.serialization, 'add_safe_globals'):
-            try:
-                torch.serialization.add_safe_globals(safe_globals_list)
-            except Exception:
-                pass
-        
-        # Load model
         model = YOLO("yolov8n.pt")
-
+        return model
     except Exception as e:
-        # Fallback: patch torch.load to use weights_only=False
-        try:
-            import torch
-            original_load = torch.load
-            
-            def patched_load(*args, **kwargs):
-                kwargs['weights_only'] = False
-                return original_load(*args, **kwargs)
-            
-            torch.load = patched_load
-            model = YOLO("yolov8n.pt")
-            torch.load = original_load
-            
-        except Exception as e2:
-            return {"error": f"Failed to load YOLO model: {e2}"}
+        print(f"Standard load failed, applying patch: {e}")
+        import torch
+        original_load = torch.load
+        def patched_load(*args, **kwargs):
+            kwargs['weights_only'] = False
+            return original_load(*args, **kwargs)
+        torch.load = patched_load
+        model = YOLO("yolov8n.pt")
+        torch.load = original_load
+        return model
 
-    # -------------------------------
-    # 2) Video IO setup
-    # -------------------------------
+model = load_yolo_model()
+
+# -------------------------------
+# 1. REAL VIDEO PROCESSING (Unchanged)
+# -------------------------------
+def generate_frames(video_path, overspeed_limit_kmh=60, distance_meters=20.0, record_config=None):
+    if not video_path or not os.path.isfile(video_path):
+        print(f"Error: Video file not found at {video_path}")
+        return
+
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-
-    WIDTH, HEIGHT = 1280, 720
-    W_orig = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or WIDTH)
-    H_orig = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or HEIGHT)
-    need_resize = (W_orig != WIDTH or H_orig != HEIGHT)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"processed_{timestamp}.mp4"
-    output_path = os.path.join(os.path.dirname(video_path), output_filename) 
+    PROCESS_W, PROCESS_H = 1280, 720
     
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, fps, (WIDTH, HEIGHT))
+    out = None
+    all_logs = []
+    overspeed_summary = []
+    
+    if record_config and record_config.get("output_path"):
+        os.makedirs(os.path.dirname(record_config["output_path"]), exist_ok=True)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(record_config["output_path"], fourcc, fps, (PROCESS_W, PROCESS_H))
 
-    # -------------------------------
-    # 3) Speed trap configuration
-    # -------------------------------
-    MEASUREMENT_DISTANCE_M = distance_meters
+    # --- ADJUSTED LINE SPACING (Wider Gap) ---
+    # Moved Start line lower (75%) and End line higher (25%)
+    START_LINE_Y = int(PROCESS_H * 0.75)
+    END_LINE_Y = int(PROCESS_H * 0.25)
     
-    # Line positions (adjust these based on your camera angle)
-    START_LINE_Y = int(HEIGHT * 0.70)  # Red line - measurement begins (70% down the frame)
-    END_LINE_Y = int(HEIGHT * 0.40)    # Blue line - measurement ends (40% down the frame)
-    
-    # Tracking data structures
     cross = {}
-    overspeed_records = []
-    live_logs = []
-    valid_labels = {"car", "bus", "truck", "motorcycle", "bicycle"}
+    target_classes = [2, 3, 5, 7]
     frame_idx = 0
 
-    def draw_measurement_line(frame, y_position, color, label_text):
-        """Draw a full-width horizontal line with text background for visibility"""
-        # Draw main line
-        cv2.line(frame, (0, y_position), (WIDTH, y_position), color, 4)
-        
-        # Prepare text
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.9
-        thickness = 2
-        text_size = cv2.getTextSize(label_text, font, font_scale, thickness)[0]
-        
-        # Draw black background for text
-        padding = 10
-        cv2.rectangle(frame, 
-                     (5, y_position - text_size[1] - padding - 5),
-                     (text_size[0] + padding + 5, y_position - 5),
-                     (0, 0, 0), -1)
-        
-        # Draw white text
-        cv2.putText(frame, label_text, (10, y_position - padding),
-                   font, font_scale, (255, 255, 255), thickness)
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret: break
+            frame_idx += 1
+            frame = cv2.resize(frame, (PROCESS_W, PROCESS_H))
+            annotated = frame.copy()
 
-    def calculate_speed(start_frame, end_frame, fps, distance_m):
-        """Calculate speed in km/h based on frames taken to travel known distance"""
-        frames_taken = end_frame - start_frame
-        if frames_taken <= 0:
-            return 0.0
-        
-        time_seconds = frames_taken / fps
-        speed_m_s = distance_m / time_seconds
-        speed_kmh = speed_m_s * 3.6
-        return speed_kmh
+            cv2.line(annotated, (0, START_LINE_Y), (PROCESS_W, START_LINE_Y), (0, 0, 255), 2)
+            cv2.putText(annotated, "START", (10, START_LINE_Y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0,255), 2)
+            cv2.line(annotated, (0, END_LINE_Y), (PROCESS_W, END_LINE_Y), (255, 0, 0), 2)
+            cv2.putText(annotated, "END", (10, END_LINE_Y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,0,0), 2)
 
-    print("--- Processing started ---")
-    print(f"Speed trap: {MEASUREMENT_DISTANCE_M}m | Limit: {overspeed_limit_kmh} km/h | FPS: {fps:.2f}")
+            results = model.track(frame, persist=True, verbose=False, tracker="bytetrack.yaml", 
+                                  conf=0.3, iou=0.5, classes=target_classes)
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame_idx += 1
+            if results and len(results) > 0 and results[0].boxes.id is not None:
+                ids = results[0].boxes.id.int().cpu().tolist()
+                boxes = results[0].boxes.xyxy.cpu().tolist()
+                cls_ids = results[0].boxes.cls.int().cpu().tolist()
 
-        if need_resize:
-            frame = cv2.resize(frame, (WIDTH, HEIGHT))
+                for box, cls_id, obj_id in zip(boxes, cls_ids, ids):
+                    label = results[0].names[int(cls_id)]
+                    x1, y1, x2, y2 = map(int, box)
+                    bx, by = (x1 + x2) // 2, y2
 
-        annotated = frame.copy()
-
-        # Draw measurement lines
-        draw_measurement_line(annotated, START_LINE_Y, (0, 0, 255), 
-                            f"START LINE - {MEASUREMENT_DISTANCE_M}m trap begins")
-        draw_measurement_line(annotated, END_LINE_Y, (255, 0, 0), 
-                            f"END LINE - {MEASUREMENT_DISTANCE_M}m trap ends")
-
-        # Run YOLO tracking
-        results = model.track(frame, persist=True, verbose=False, tracker="bytetrack.yaml")
-
-        if results and len(results) > 0 and getattr(results[0].boxes, "id", None) is not None:
-            ids = results[0].boxes.id.int().cpu().tolist()
-            boxes = results[0].boxes.xyxy.cpu().tolist()
-            cls_ids = results[0].boxes.cls.int().cpu().tolist()
-
-            for box, cls_id, obj_id in zip(boxes, cls_ids, ids):
-                x1, y1, x2, y2 = map(int, box)
-                bx, by = (x1 + x2) // 2, y2  # Bottom center of bounding box
-                label = results[0].names[int(cls_id)]
-
-                if label in valid_labels:
-                    # Check if vehicle crosses START line (red)
                     if by >= START_LINE_Y and obj_id not in cross:
-                        cross[obj_id] = {
-                            "start_frame": frame_idx,
-                            "end_frame": None,
-                            "speed": 0.0,
-                            "label": label
-                        }
-                        print(f"Vehicle {obj_id} ({label}) entered trap at frame {frame_idx}")
-                    
-                    # Check if vehicle crosses END line (blue)
-                    if obj_id in cross and cross[obj_id]["end_frame"] is None and by <= END_LINE_Y:
-                        cross[obj_id]["end_frame"] = frame_idx
-                        
-                        # Calculate speed
-                        kmh = calculate_speed(
-                            cross[obj_id]["start_frame"],
-                            frame_idx,
-                            fps,
-                            MEASUREMENT_DISTANCE_M
-                        )
-                        cross[obj_id]["speed"] = kmh
-                        
-                        frames_taken = frame_idx - cross[obj_id]["start_frame"]
-                        time_sec = frames_taken / fps
-                        
-                        print(f"Vehicle {obj_id}: {MEASUREMENT_DISTANCE_M}m in {time_sec:.2f}s = {kmh:.2f} km/h")
+                        cross[obj_id] = {"start_frame": frame_idx, "end_frame": None, "speed": 0}
 
-                        # Create log record
-                        record_data = {
-                            "id": obj_id,
-                            "label": label,
-                            "speed": round(kmh, 2),
-                            "frame": frame_idx,
-                            "overspeed": kmh > overspeed_limit_kmh
-                        }
-                        live_logs.append(record_data)
+                    if obj_id in cross and cross[obj_id]["end_frame"] is None:
+                        if by <= END_LINE_Y:
+                            cross[obj_id]["end_frame"] = frame_idx
+                            frames_taken = abs(frame_idx - cross[obj_id]["start_frame"])
+                            if frames_taken > 2: 
+                                time_sec = frames_taken / fps
+                                speed_kmh = (distance_meters / time_sec) * 3.6
+                                cross[obj_id]["speed"] = speed_kmh
+                                log_entry = {"id": obj_id, "label": label, "speed": round(speed_kmh, 1), "frame": frame_idx, "overspeed": speed_kmh > overspeed_limit_kmh}
+                                if not any(l["id"] == obj_id for l in all_logs):
+                                    all_logs.append(log_entry)
+                                    if log_entry["overspeed"]: overspeed_summary.append(log_entry)
 
-                        if record_data["overspeed"]:
-                            overspeed_records.append(record_data)
-                            print(f"  ⚠️ OVERSPEED: {kmh:.2f} km/h > {overspeed_limit_kmh} km/h")
-                    
-                    # Draw bounding box and info
                     current_speed = cross.get(obj_id, {}).get("speed", 0)
-                    speed_int = int(current_speed)
-                    is_overspeed = current_speed > overspeed_limit_kmh
-                    
-                    # Color based on speed
-                    box_color = (0, 0, 255) if is_overspeed else (0, 255, 0)
-                    
-                    # Draw box
-                    cv2.rectangle(annotated, (x1, y1), (x2, y2), box_color, 2)
-                    
-                    # Draw info text with background
-                    info_text = f"{label} | ID:{obj_id}"
-                    if speed_int > 0:
-                        info_text += f" | {speed_int} km/h"
-                    
-                    text_size = cv2.getTextSize(info_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
-                    cv2.rectangle(annotated, (x1, max(0, y1 - text_size[1] - 8)),
-                                (x1 + text_size[0] + 4, y1), (0, 0, 0), -1)
-                    cv2.putText(annotated, info_text, (x1 + 2, max(text_size[1], y1 - 4)),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2)
-                    
-                    # Overspeed warning
-                    if is_overspeed and speed_int > 0:
-                        warning_y = min(HEIGHT - 15, y2 + 25)
-                        cv2.rectangle(annotated, (x1, warning_y - 20),
-                                    (x1 + 180, warning_y + 5), (0, 0, 0), -1)
-                        cv2.putText(annotated, "OVERSPEED!", (x1 + 5, warning_y),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    color = (0, 0, 255) if current_speed > overspeed_limit_kmh else (0, 255, 0)
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+                    info = f"{int(current_speed)} km/h" if current_speed > 0 else f"{label} {obj_id}"
+                    cv2.putText(annotated, info, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        out.write(annotated)
+            if out: out.write(annotated)
+            if record_config and record_config.get("live_callback"):
+                count = len(all_logs)
+                avg = sum(l["speed"] for l in all_logs)/count if count else 0
+                mx = max([l["speed"] for l in all_logs]) if count else 0
+                record_config["live_callback"]({"total_vehicles": count, "total_violations": len(overspeed_summary), "avg_speed": round(avg, 1), "max_speed": round(mx, 1), "all_logs": all_logs, "overspeed_summary": overspeed_summary})
 
-    cap.release()
-    out.release()
+            (flag, encodedImage) = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if not flag: continue
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n')
 
-    print(f"--- Processing complete. Output: {output_path} ---")
-    print(f"Total vehicles logged: {len(live_logs)} | Overspeeds: {len(overspeed_records)}")
+    except Exception as e: print(f"Error: {e}")
+    finally:
+        cap.release()
+        if out: out.release()
+        if record_config and record_config.get("data_callback"):
+            record_config["data_callback"]({"all_logs": all_logs, "overspeed_summary": overspeed_summary})
+
+def process_video_for_speed(video_path, overspeed_limit_kmh=60, distance_meters=20.0):
+    return {"error": "Use streaming mode"}
+
+# -------------------------------
+# 2. VIRTUAL TRAFFIC SIMULATION (Smart Overtaking)
+# -------------------------------
+class VirtualVehicle:
+    def __init__(self, id, lane_idx, lane_x, overspeed_limit):
+        self.id = id
+        self.lane = lane_idx
+        self.x = lane_x
+        self.target_x = lane_x
+        # Spawn at bottom
+        self.y = 720 + random.randint(0, 100) 
+        self.plate = self.generate_plate()
+        
+        # Vehicle Type & Base Speed
+        r = random.random()
+        if r < 0.6: 
+            self.type = "car"
+            self.w, self.h = 50, 90
+            self.color = (0, 255, 255) # Yellow
+            self.base_speed_px = random.uniform(5, 8) 
+        elif r < 0.8:
+            self.type = "truck"
+            self.w, self.h = 70, 140
+            self.color = (255, 100, 0) # Blue
+            self.base_speed_px = random.uniform(3, 5) 
+        else:
+            self.type = "bus"
+            self.w, self.h = 65, 130
+            self.color = (0, 165, 255) # Orange
+            self.base_speed_px = random.uniform(4, 6)
+
+        # Chance to Overspeed
+        if random.random() < 0.3:
+            self.base_speed_px *= 1.8 
+            self.color = (0, 0, 255) 
+
+        self.current_speed_px = self.base_speed_px
+        
+        # Speed Detection State
+        self.start_frame = None
+        self.end_frame = None
+        self.detected_speed = 0.0
+        self.is_overspeed = False
+        self.active = True
+
+    def generate_plate(self):
+        # Indian Style Plate: MH 12 AB 1234
+        states = ["MH", "DL", "KA", "TN", "WB", "GJ", "UP", "HR", "RJ", "MP"]
+        state = random.choice(states)
+        district = f"{random.randint(1, 99):02d}"
+        series = "".join(random.choices(string.ascii_uppercase, k=2))
+        number = f"{random.randint(1, 9999):04d}"
+        return f"{state} {district} {series} {number}"
+
+    def change_lane(self, new_lane_idx, new_lane_x):
+        self.lane = new_lane_idx
+        self.target_x = new_lane_x
+
+    def update(self):
+        # Move forward
+        self.y -= self.current_speed_px
+        
+        # Smooth sideways movement (Lane Change)
+        if abs(self.x - self.target_x) > 1:
+            move_dir = 1 if self.target_x > self.x else -1
+            self.x += move_dir * 3 # Lateral speed
+            
+        if self.y < -200: self.active = False
+
+def generate_virtual_simulation(overspeed_limit_kmh=60, distance_meters=20.0, record_config=None):
+    W, H = 1280, 720
+    fps = 30.0
     
-    return {
-        "output_video_path": output_path,
-        "overspeed_summary": overspeed_records,
-        "all_logs": live_logs
-    }
+    # 3 Lanes
+    lanes_x = [int(W*0.3), int(W*0.5), int(W*0.7)]
+    vehicles = []
+    vehicle_counter = 0
+    
+    # --- ADJUSTED LINE SPACING (Wider Gap) ---
+    # Moved Start line lower (75%) and End line higher (25%)
+    START_LINE_Y = int(H * 0.75)
+    END_LINE_Y = int(H * 0.25)
+    
+    all_logs = []
+    overspeed_logs = []
+    frame_idx = 0
+
+    try:
+        while True:
+            frame_idx += 1
+            # 1. Background
+            frame = np.zeros((H, W, 3), dtype=np.uint8)
+            frame[:] = (60, 60, 60) 
+            
+            # Draw Lanes
+            for lx in lanes_x:
+                for i in range(0, H, 40):
+                    cv2.line(frame, (lx - 70, i), (lx - 70, i+20), (255, 255, 255), 2)
+            cv2.line(frame, (lanes_x[-1] + 70, 0), (lanes_x[-1] + 70, H), (255, 255, 255), 2) 
+            cv2.rectangle(frame, (0, 0), (lanes_x[0]-70, H), (34, 139, 34), -1) 
+            cv2.rectangle(frame, (lanes_x[-1]+70, 0), (W, H), (34, 139, 34), -1) 
+
+            # Draw Detection Lines
+            cv2.line(frame, (0, START_LINE_Y), (W, START_LINE_Y), (0, 0, 255), 3) 
+            cv2.putText(frame, f"START ({distance_meters}m to End)", (10, START_LINE_Y + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
+            
+            cv2.line(frame, (0, END_LINE_Y), (W, END_LINE_Y), (255, 0, 0), 3) 
+            cv2.putText(frame, "END DETECTION", (10, END_LINE_Y - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,0,0), 2)
+
+            # 2. Spawn Vehicles
+            if random.random() < 0.08:
+                lane_choice = random.randint(0, 2)
+                lane_x_pos = lanes_x[lane_choice]
+                
+                # Check clearance at spawn point
+                is_clear = True
+                for v in vehicles:
+                    if v.lane == lane_choice and v.y > H - 150:
+                        is_clear = False
+                        break
+                
+                if is_clear:
+                    vehicle_counter += 1
+                    vehicles.append(VirtualVehicle(vehicle_counter, lane_choice, lane_x_pos, overspeed_limit_kmh))
+
+            # 3. Update & Overtake Logic
+            for v in vehicles:
+                # Check for vehicle ahead
+                ahead = None
+                min_d = 1000
+                for other in vehicles:
+                    if v.id != other.id and v.lane == other.lane and other.y < v.y:
+                        d = v.y - (other.y + other.h)
+                        if d < min_d:
+                            min_d = d
+                            ahead = other
+                
+                # Lane Change / Slow Down logic
+                if ahead and min_d < 80: # Too close
+                    changed = False
+                    # Try Left
+                    if v.lane > 0:
+                        # Check if left lane is empty in that zone
+                        safe = True
+                        for other in vehicles:
+                            if other.lane == v.lane - 1 and abs(other.y - v.y) < 180:
+                                safe = False; break
+                        if safe:
+                            v.change_lane(v.lane - 1, lanes_x[v.lane - 1])
+                            changed = True
+                    
+                    # Try Right
+                    if not changed and v.lane < 2:
+                        safe = True
+                        for other in vehicles:
+                            if other.lane == v.lane + 1 and abs(other.y - v.y) < 180:
+                                safe = False; break
+                        if safe:
+                            v.change_lane(v.lane + 1, lanes_x[v.lane + 1])
+                            changed = True
+                    
+                    if not changed:
+                        # Stuck: Match speed
+                        v.current_speed_px = max(ahead.current_speed_px - 0.5, 0)
+                else:
+                    # Clear road: Accelerate to base speed
+                    if v.current_speed_px < v.base_speed_px:
+                        v.current_speed_px += 0.2
+
+                v.update()
+                
+                # --- DETECTION LOGIC ---
+                v_bottom = v.y + v.h
+                if v.start_frame is None and v_bottom <= START_LINE_Y:
+                    v.start_frame = frame_idx
+                
+                if v.start_frame is not None and v.end_frame is None and v_bottom <= END_LINE_Y:
+                    v.end_frame = frame_idx
+                    frames_taken = abs(v.end_frame - v.start_frame)
+                    if frames_taken > 0:
+                        time_sec = frames_taken / fps
+                        calculated_speed = (distance_meters / time_sec) * 3.6
+                        v.detected_speed = round(calculated_speed, 1)
+                        v.is_overspeed = v.detected_speed > overspeed_limit_kmh
+                        
+                        log_entry = {
+                            "id": v.id, 
+                            "plate": v.plate, # Added Plate to Log
+                            "label": v.type, 
+                            "speed": v.detected_speed, 
+                            "frame": frame_idx, 
+                            "overspeed": v.is_overspeed
+                        }
+                        all_logs.append(log_entry)
+                        if v.is_overspeed: overspeed_logs.append(log_entry)
+
+                # Draw
+                cv2.rectangle(frame, (int(v.x-v.w/2), int(v.y)), (int(v.x+v.w/2), int(v.y+v.h)), v.color, -1)
+                
+                # Draw Plate (Larger box for Indian Plate)
+                cv2.rectangle(frame, (int(v.x-35), int(v.y+10)), (int(v.x+35), int(v.y+28)), (255,255,255), -1)
+                cv2.putText(frame, v.plate, (int(v.x-33), int(v.y+23)), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1)
+
+                box_c = (0, 0, 255) if v.is_overspeed else (0, 255, 0)
+                cv2.rectangle(frame, (int(v.x-v.w/2), int(v.y)), (int(v.x+v.w/2), int(v.y+v.h)), box_c, 2)
+                
+                if v.detected_speed > 0:
+                    cv2.putText(frame, f"{v.detected_speed} km/h", (int(v.x-v.w/2), int(v.y)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_c, 2)
+                else:
+                    cv2.putText(frame, f"ID:{v.id}", (int(v.x-v.w/2), int(v.y)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+            vehicles = [v for v in vehicles if v.active]
+
+            # Overlay
+            cv2.rectangle(frame, (0, 0), (W, 40), (0, 0, 0), -1)
+            cv2.putText(frame, f"LIVE SIMULATION | Vehicles: {len(all_logs)} | Violations: {len(overspeed_logs)}", (20, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+            # Send Stats
+            if record_config and record_config.get("live_callback"):
+                count = len(all_logs)
+                avg = sum(l["speed"] for l in all_logs)/count if count else 0
+                mx = max([l["speed"] for l in all_logs]) if count else 0
+                record_config["live_callback"]({
+                    "total_vehicles": count, 
+                    "total_violations": len(overspeed_logs),
+                    "avg_speed": round(avg, 1),
+                    "max_speed": round(mx, 1),
+                    "all_logs": all_logs,
+                    "overspeed_summary": overspeed_logs
+                })
+
+            (flag, encodedImage) = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            if not flag: continue
+            yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n')
+            time.sleep(0.03)
+
+    except Exception as e: print(f"Sim Error: {e}")

@@ -1,20 +1,22 @@
-# Node modules
-frontend/node_modules/
-
-# React build
-frontend/build/
-
-# Python venv
+# Python virtual environments
+venv/
+.venv/
 backend/.venv/
 
 # Python cache
+__pycache__/
 backend/__pycache__/
 
-# uploads / history data (optional)
+# Backend runtime data
 backend/uploads/
 backend/history/
 backend/logs/
 
-# OS files
+# Frontend
+frontend/node_modules/
+frontend/build/
+
+# Env & OS
+.env
 .DS_Store
 Thumbs.db
