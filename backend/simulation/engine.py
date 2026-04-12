@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import random
 import cv2
@@ -10,6 +11,42 @@ from .constants import (
     W, H, LANES_X, ROAD_LEFT, ROAD_RIGHT,
     START_LINE_Y, END_LINE_Y, SIM_FPS,
 )
+
+# Resolve the backend root so database.py is importable regardless of cwd
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
+
+try:
+    from database import get_all_car_numbers, get_vehicle_details as _db_get_details
+    _DB_AVAILABLE = True
+except Exception as _db_import_err:
+    print(f"[DB] Could not import database module: {_db_import_err}")
+    _DB_AVAILABLE = False
+
+# Optional: update helper to change driver contact when violation occurs
+try:
+    from db_utils import update_driver_contact_by_plate as _update_contact
+except Exception:
+    _update_contact = None
+# Notifier helpers (Twilio SMS only)
+try:
+    from notify import send_sms as _send_sms, send_twilio_sms as _send_twilio
+except Exception:
+    _send_sms = None
+    _send_twilio = None
+
+
+def _safe_get_vehicle_details(plate):
+    """Fetch vehicle/owner/driver details; returns empty dict on any error."""
+    if not _DB_AVAILABLE:
+        return {}
+    try:
+        result = _db_get_details(plate)
+        return result if result else {}
+    except Exception as e:
+        print(f"[DB] detail fetch failed for {plate}: {e}")
+        return {}
 
 
 def generate_virtual_simulation(
@@ -29,6 +66,38 @@ def generate_virtual_simulation(
     overspeed_logs: list[dict] = []
     frame_idx = 0
 
+    # ── Load registered car plates from DB ───────────────────────────
+    db_plates: list[str] = []
+    if _DB_AVAILABLE:
+        try:
+            db_plates = get_all_car_numbers()
+            print(f"[DB] Loaded {len(db_plates)} registered plates from database.")
+        except Exception as _e:
+            print(f"[DB] Could not load plates: {_e}")
+    if not db_plates:
+        print("[DB] No plates in DB — vehicles will use randomly generated plates.")
+
+    # If you updated a driver's contact in the DB to your phone number,
+    # place that car so it will be assigned to the 5th spawned vehicle.
+    TARGET_PHONE = os.getenv('TARGET_PHONE', '9007074039')
+    _plate_pool = list(db_plates)  # mutable copy for cycling
+    user_plate = None
+    try:
+        # find plates matching the target phone
+        matching = [p for p in _plate_pool if _safe_get_vehicle_details(p).get('driver_contact') == TARGET_PHONE]
+        if matching:
+            user_plate = matching[0]
+            # ensure pool length >= 5 by repeating entries if needed
+            while len(_plate_pool) < 5:
+                _plate_pool.extend(list(db_plates))
+            # move user_plate to index 4 (so vehicle_counter==5 uses it)
+            if user_plate in _plate_pool:
+                _plate_pool.remove(user_plate)
+                _plate_pool.insert(4, user_plate)
+                print(f"[DB] Placed user plate {user_plate} at position for 5th vehicle")
+    except Exception as _e:
+        print(f"[DB] Could not arrange plate pool for target phone: {_e}")
+
     # Optional: pre-draw the static road into a template so we can copy it
     # each frame instead of re-drawing from scratch (minor optimisation).
     _road_template = np.zeros((H, W, 3), dtype=np.uint8)
@@ -41,23 +110,30 @@ def generate_virtual_simulation(
             # ── 1. STATIC ROAD ────────────────────────────────────────────────
             frame = _road_template.copy()
 
-            # ── 2. SPAWN VEHICLES ─────────────────────────────────────────────
-            if random.random() < 0.08:
+            # ── 2. SPAWN VEHICLES  (max 1 per lane, slow rate) ───────────────
+            if random.random() < 0.025:
                 lane_choice = random.randint(0, len(LANES_X) - 1)
-                is_clear = all(
-                    not (v.lane == lane_choice and v.y > H - 150)
-                    for v in vehicles
-                )
+                # Strict: lane must be completely empty
+                is_clear = all(v.lane != lane_choice for v in vehicles)
                 if is_clear:
                     vehicle_counter += 1
+                    # Make every 5th vehicle overspeed
+                    should_overspeed = (vehicle_counter % 5 == 0)
+                    # Pick next plate from the DB pool; fall back to random
+                    if _plate_pool:
+                        assigned_plate = _plate_pool[(vehicle_counter - 1) % len(_plate_pool)]
+                    else:
+                        assigned_plate = None
                     vehicles.append(
                         VirtualVehicle(
                             vehicle_counter, lane_choice,
                             LANES_X[lane_choice], overspeed_limit_kmh,
+                            plate=assigned_plate,
+                            force_overspeed=should_overspeed,
                         )
                     )
 
-            # ── 3. UPDATE VEHICLES + OVERTAKE LOGIC ──────────────────────────
+            # ── 3. UPDATE VEHICLES (no overtaking — slow down behind car ahead)
             for v in vehicles:
                 # Find the closest vehicle ahead in the same lane
                 ahead, min_dist = None, 1000
@@ -68,22 +144,8 @@ def generate_virtual_simulation(
                             min_dist, ahead = d, other
 
                 if ahead and min_dist < 80:
-                    # Try to overtake into an adjacent lane
-                    changed = False
-                    for delta in [-1, 1]:
-                        nl = v.lane + delta
-                        if 0 <= nl < len(LANES_X):
-                            safe = all(
-                                abs(o.y - v.y) >= 180
-                                for o in vehicles
-                                if o.lane == nl and o.id != v.id
-                            )
-                            if safe:
-                                v.change_lane(nl, LANES_X[nl])
-                                changed = True
-                                break
-                    if not changed:
-                        v.current_speed = max(ahead.current_speed - 0.5, 0)
+                    # No overtaking — just slow down to match car ahead
+                    v.current_speed = max(ahead.current_speed - 0.5, 0)
                 else:
                     if v.current_speed < v.base_speed:
                         v.current_speed += 0.2
@@ -103,6 +165,21 @@ def generate_virtual_simulation(
                         v.detected_speed = round((distance_meters / time_sec) * 3.6, 1)
                         v.is_overspeed = v.detected_speed > overspeed_limit_kmh
 
+                        # Enforce: if this vehicle is the user's plate (placed as 5th),
+                        # set its detected speed to exactly 50 km/h. Ensure all other
+                        # vehicles remain under 50 km/h.
+                        try:
+                            if user_plate and v.plate == user_plate:
+                                v.detected_speed = 50.0
+                                v.is_overspeed = v.detected_speed > overspeed_limit_kmh
+                            else:
+                                # clamp others to below 50 km/h
+                                if v.detected_speed >= 50.0:
+                                    v.detected_speed = 49.9
+                                    v.is_overspeed = v.detected_speed > overspeed_limit_kmh
+                        except Exception:
+                            pass
+
                         # Plate is already known — no OCR needed
                         if v.is_overspeed and not v.plate_captured:
                             v.scan_start_frame = frame_idx
@@ -120,6 +197,39 @@ def generate_virtual_simulation(
                             "frame":     frame_idx,
                             "overspeed": v.is_overspeed,
                         }
+
+                        # Enrich violation entry with DB owner/driver details
+                        if v.is_overspeed:
+                            details = _safe_get_vehicle_details(v.plate)
+                            log_entry["driver_name"]    = details.get("driver_name")    or "N/A"
+                            log_entry["driver_contact"] = details.get("driver_contact") or "N/A"
+                            log_entry["driver_license"] = details.get("license_number") or "N/A"
+                            log_entry["owner_name"]     = details.get("owner_name")     or "N/A"
+                            log_entry["owner_contact"]  = details.get("owner_contact")  or "N/A"
+                            log_entry["vehicle_make"]   = details.get("make")           or "N/A"
+                            log_entry["vehicle_model"]  = details.get("model")          or "N/A"
+                            log_entry["vehicle_color"]  = details.get("color")          or "N/A"
+                            # Send a real-time notification via Twilio to the driver's phone
+                            try:
+                                body = (
+                                    f"ALERT: Vehicle {v.plate} detected at {v.detected_speed} km/h "
+                                    f"(limit {overspeed_limit_kmh} km/h)."
+                                )
+                                driver_phone = details.get('driver_contact')
+                                if driver_phone and _send_twilio:
+                                    try:
+                                        sent = _send_twilio(driver_phone, body)
+                                        log_entry['twilio_sms_sent'] = bool(sent)
+                                        if sent:
+                                            print(f"[NOTIFY] Twilio SMS sent to driver {driver_phone} for plate={v.plate}")
+                                    except Exception as _fberr:
+                                        print(f"[NOTIFY] Twilio SMS failed: {_fberr}")
+
+                                # Additionally, attempt a voice call to the driver phone stored in DB (if configured)
+                                # Voice call support removed — only SMS is sent
+                            except Exception as _nerr:
+                                print(f"[NOTIFY] notification send failed: {_nerr}")
+
                         all_logs.append(log_entry)
                         if v.is_overspeed:
                             overspeed_logs.append(log_entry)

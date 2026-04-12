@@ -21,7 +21,7 @@ const LoginPage = ({ onLogin }) => {
         localStorage.setItem('token', data.access_token);
         localStorage.setItem('username', data.username);
         localStorage.setItem('role', data.role);
-        onLogin(data);
+        onLogin({ username: data.username, role: data.role });
       } else { alert("Login Failed: " + (data.error || "Unknown error")); }
     } catch (err) { alert("Connection Error. Is the backend running?"); }
     setIsLoading(false);
@@ -83,7 +83,7 @@ const LoginPage = ({ onLogin }) => {
         </form>
 
         <div className="mt-8 pt-6 border-t border-slate-700/50 text-center">
-          <p className="text-xs text-slate-500">Demo Credentials</p>
+          <p className="text-xs text-slate-500">Default Credentials (stored in database)</p>
           <div className="flex justify-center gap-4 mt-2 text-xs font-mono text-slate-400">
             <span className="bg-slate-900/50 px-3 py-1 rounded-full border border-slate-700">admin / admin123</span>
             <span className="bg-slate-900/50 px-3 py-1 rounded-full border border-slate-700">user / user123</span>

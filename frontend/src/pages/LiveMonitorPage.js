@@ -102,8 +102,63 @@ const LiveMonitorPage = ({ token }) => {
 
       <div className="grid lg:grid-cols-2 gap-6">
         <LogTable title="Virtual Vehicle Logs" data={liveStats.all_logs} icon={<Car className="text-green-400" />} color="slate" showPlate={true} />
-        <LogTable title="Virtual Violation Logs" data={liveStats.overspeed_summary} icon={<AlertTriangle className="text-red-400" />} color="red" showPlate={true} />
+        <LogTable title="Virtual Violation Logs" data={liveStats.overspeed_summary} icon={<AlertTriangle className="text-red-400" />} color="red" showPlate={true} showDetails={true} />
       </div>
+
+      {/* ── Violator Detail Cards ───────────────────────────────────── */}
+      {liveStats.overspeed_summary && liveStats.overspeed_summary.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-xl font-bold text-red-400 flex items-center gap-2">
+            <AlertTriangle size={20} /> Violator Details (from Database)
+          </h2>
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {[...liveStats.overspeed_summary].reverse().slice(0, 9).map((v, i) => (
+              <div key={i} className="bg-slate-800 border border-red-700/50 rounded-2xl p-4 shadow-lg">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="font-mono text-white font-bold text-lg tracking-wider bg-yellow-500/20 border border-yellow-500/40 px-3 py-1 rounded">
+                    {v.plate}
+                  </span>
+                  <span className="text-red-400 font-bold text-sm bg-red-900/40 px-2 py-1 rounded">
+                    {v.speed} km/h
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-wide">Type</p>
+                    <p className="text-slate-200 capitalize">{v.label}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-wide">Vehicle</p>
+                    <p className="text-slate-200">
+                      {v.vehicle_make && v.vehicle_model ? `${v.vehicle_make} ${v.vehicle_model}` : <span className="italic text-slate-500">N/A</span>}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-wide mt-2">Driver</p>
+                    <p className="text-yellow-300 font-semibold">{v.driver_name || <span className="italic text-slate-500">N/A</span>}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-wide mt-2">License</p>
+                    <p className="text-slate-200 font-mono text-xs">{v.driver_license || <span className="italic text-slate-500">N/A</span>}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-wide mt-2">Driver Contact</p>
+                    <p className="text-blue-300">{v.driver_contact || <span className="italic text-slate-500">N/A</span>}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-wide mt-2">Owner</p>
+                    <p className="text-purple-300 font-semibold">{v.owner_name || <span className="italic text-slate-500">N/A</span>}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-slate-400 uppercase tracking-wide mt-2">Owner Contact</p>
+                    <p className="text-blue-300">{v.owner_contact || <span className="italic text-slate-500">N/A</span>}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

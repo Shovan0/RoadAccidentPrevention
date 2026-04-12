@@ -9,13 +9,13 @@ from .constants import VEHICLE_COLORS, H
 class VirtualVehicle:
     """Top-down 3-D style vehicle sprite for the virtual simulation."""
 
-    def __init__(self, vid, lane_idx, lane_x, overspeed_limit):
+    def __init__(self, vid, lane_idx, lane_x, overspeed_limit, plate=None, force_overspeed=False):
         self.id        = vid
         self.lane      = lane_idx
         self.x         = float(lane_x)
         self.target_x  = float(lane_x)
         self.y         = float(H + random.randint(0, 100))
-        self.plate     = self._generate_plate()
+        self.plate     = plate if plate else self._generate_plate()
 
         r = random.random()
         if r < 0.6:
@@ -34,7 +34,7 @@ class VirtualVehicle:
             self.base_color = random.choice(VEHICLE_COLORS["bus"])
             self.base_speed = random.uniform(4, 6)
 
-        if random.random() < 0.3:          # ~30 % chance to overspeed
+        if force_overspeed:                # caller decides — no randomness
             self.base_speed *= 1.8
 
         self.current_speed  = self.base_speed

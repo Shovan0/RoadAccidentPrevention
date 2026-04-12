@@ -10,6 +10,18 @@ from werkzeug.utils import secure_filename
 import bcrypt
 # Import both generators
 from process_video import generate_frames, generate_virtual_simulation
+# DB helpers
+from database import get_all_registered_cars, get_vehicle_details, get_user_by_username, seed_default_users
+# Load .env if present and notification helpers
+from dotenv import load_dotenv
+load_dotenv()
+
+# Notification test helpers (optional)
+try:
+    from notify import send_twilio_sms
+except Exception:
+    send_twilio_sms = None
+import os
 
 UPLOAD_DIR = "uploads"
 HISTORY_DIR = "history"
@@ -24,11 +36,10 @@ app.config["JWT_SECRET_KEY"] = "your-secret-key"
 jwt = JWTManager(app)
 
 HISTORY_FILE = os.path.join(HISTORY_DIR, "processing_history.json")
-USERS = {
-    "admin": {"password": bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()), "role": "admin"},
-    "user": {"password": bcrypt.hashpw("user123".encode(), bcrypt.gensalt()), "role": "user"}
-}
 STREAM_STATS = {}
+
+# Ensure default users exist in the database on startup
+seed_default_users()
 
 def load_history():
     if not os.path.exists(HISTORY_FILE): return []
@@ -46,14 +57,22 @@ def save_history(data):
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json()
-    u = USERS.get(data.get("username"))
-    if u and bcrypt.checkpw(data.get("password").encode(), u["password"]):
-        return jsonify(access_token=create_access_token(identity=data["username"], additional_claims={"role": u["role"]}))
-    return jsonify({"error": "Invalid"}), 401
+    username = data.get("username", "").strip()
+    password = data.get("password", "")
+    user = get_user_by_username(username)
+    if user and bcrypt.checkpw(password.encode(), user["password"].encode()):
+        token = create_access_token(identity=username, additional_claims={"role": user["role"]})
+        return jsonify(access_token=token, username=username, role=user["role"])
+    return jsonify({"error": "Invalid credentials"}), 401
 
 @app.route("/api/verify-token", methods=["GET"])
 @jwt_required()
-def verify(): return jsonify({"username": get_jwt_identity(), "role": USERS.get(get_jwt_identity())["role"]}), 200
+def verify():
+    username = get_jwt_identity()
+    user = get_user_by_username(username)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"username": username, "role": user["role"]}), 200
 
 @app.route("/api/history", methods=["GET"])
 @jwt_required()
@@ -142,5 +161,75 @@ def dl(fname):
     path = os.path.join(UPLOAD_DIR, secure_filename(fname))
     return send_file(path, as_attachment=True) if os.path.exists(path) else abort(404)
 
+# ── Database-backed endpoints ──────────────────────────────────────────────────
+
+@app.route("/api/registered-cars", methods=["GET"])
+@jwt_required()
+def registered_cars():
+    """Return all cars registered in the DB (admin use)."""
+    try:
+        cars = get_all_registered_cars()
+        return jsonify(cars), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/vehicle-details/<path:plate>", methods=["GET"])
+@jwt_required()
+def vehicle_details(plate):
+    """Return full car + owner + driver details for a given plate number."""
+    try:
+        details = get_vehicle_details(plate)
+        if details is None:
+            return jsonify({"error": "Vehicle not found"}), 404
+        return jsonify(details), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/test-notify", methods=["GET", "POST"])
+def test_notify():
+    """Test notification endpoint. Use query params or JSON:
+    - phone: target phone number (E.164 preferred)
+    - mode: one of 'sms' or 'all' (default 'all')
+    - body: message text to send
+    """
+    data = request.get_json(silent=True) or {}
+    phone = request.args.get('phone') or data.get('phone') or os.getenv('TARGET_PHONE')
+    mode = request.args.get('mode') or data.get('mode') or 'all'
+    body = request.args.get('body') or data.get('body') or f"Test alert {datetime.now().isoformat()}"
+
+    result = {}
+
+    # SMS via Twilio (requires TWILIO env vars)
+    # Note: Telegram and voice-call support removed — only Twilio SMS is available.
+
+    if mode in ('sms', 'all'):
+        if send_twilio_sms and phone:
+            result['sms'] = bool(send_twilio_sms(phone, body))
+        else:
+            result['sms'] = False
+
+    # Voice-call support removed.
+
+    return jsonify(result), 200
+
 if __name__ == "__main__":
+    # Print notifier configuration (no secrets)
+    tw_ok = bool(os.getenv('TWILIO_ACCOUNT_SID') and os.getenv('TWILIO_AUTH_TOKEN') and os.getenv('TWILIO_FROM_NUMBER'))
+    print(f"[STARTUP] Twilio configured: {tw_ok}")
+    if tw_ok:
+        # show the from number but not tokens
+        print(f"[STARTUP] Twilio from number: {os.getenv('TWILIO_FROM_NUMBER')}")
+    print("[STARTUP] Notification status endpoint: /api/notify-status")
     app.run(host="0.0.0.0", port=5000, debug=True, threaded=True)
+
+
+@app.route('/api/notify-status', methods=['GET'])
+def notify_status():
+    """Return which notification channels are configured (no secrets)."""
+    tw_ok = bool(os.getenv('TWILIO_ACCOUNT_SID') and os.getenv('TWILIO_AUTH_TOKEN') and os.getenv('TWILIO_FROM_NUMBER'))
+    return jsonify({
+        'twilio_configured': tw_ok,
+        'twilio_from_number': os.getenv('TWILIO_FROM_NUMBER') if tw_ok else None,
+        'target_phone_prefix': os.getenv('TARGET_PHONE_PREFIX')
+    }), 200
