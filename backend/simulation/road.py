@@ -56,20 +56,5 @@ def draw_road(frame, distance_meters: float) -> None:
             cv2.rectangle(frame, (px-12, py-5),  (px+12, py+5), (230, 200, 150), -1)
 
     # ── Speed-trap detection lines ───────────────────────────────────────────
-    # Start line (yellow)
-    cv2.line(frame, (ROAD_LEFT, START_LINE_Y), (ROAD_RIGHT, START_LINE_Y), (0, 220, 255), 2)
-    cv2.putText(frame, "START",
-                (ROAD_LEFT + 6, START_LINE_Y - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 1)
-
-    # End line (cyan)
-    cv2.line(frame, (ROAD_LEFT, END_LINE_Y), (ROAD_RIGHT, END_LINE_Y), (255, 220, 0), 2)
-    cv2.putText(frame, "END",
-                (ROAD_LEFT + 6, END_LINE_Y - 6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 220, 0), 1)
-
-    # Distance label between the lines
-    mid_y = (START_LINE_Y + END_LINE_Y) // 2
-    cv2.putText(frame, f"{distance_meters:.0f} m",
-                (ROAD_RIGHT + 14, mid_y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (210, 210, 210), 1)
+    # (Removed) Trap lines and labels — detection now uses frame-to-frame pixel distance
+    # Speed is calculated internally without visual trap lines on screen

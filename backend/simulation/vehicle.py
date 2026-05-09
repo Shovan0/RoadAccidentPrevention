@@ -39,7 +39,9 @@ class VirtualVehicle:
 
         self.current_speed  = self.base_speed
         self.start_frame    = None
+        self.start_y        = None
         self.end_frame      = None
+        self.end_y          = None
         self.detected_speed = 0.0
         self.is_overspeed   = False
         self.active         = True

@@ -9,7 +9,7 @@ const LiveMonitorPage = ({ token }) => {
   const [liveStats, setLiveStats] = useState({
     total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: []
   });
-  const [config, setConfig] = useState({ limit: 60, dist: 20 });
+  const [config, setConfig] = useState({ limit: 60 });
   const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
@@ -27,7 +27,7 @@ const LiveMonitorPage = ({ token }) => {
   const handleStart = () => {
     setIsPlaying(true);
     setLiveStats({ total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] });
-    const url = `${API_ENDPOINT}/video_feed/virtual_simulation?save=false&limit=${config.limit}&dist=${config.dist}`;
+    const url = `${API_ENDPOINT}/video_feed/virtual_simulation?save=false&limit=${config.limit}`;
     setStreamUrl(url);
   };
 
@@ -54,10 +54,7 @@ const LiveMonitorPage = ({ token }) => {
               <label className="text-xs text-slate-400">Speed Limit (km/h)</label>
               <input type="number" value={config.limit} onChange={e => setConfig({ ...config, limit: e.target.value })} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm" />
             </div>
-            <div>
-              <label className="text-xs text-slate-400">Distance (meters)</label>
-              <input type="number" value={config.dist} onChange={e => setConfig({ ...config, dist: e.target.value })} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm" />
-            </div>
+            {/* Distance input removed — backend uses configured trap-line distance */}
           </div>
 
           {!isPlaying ? (
@@ -84,10 +81,11 @@ const LiveMonitorPage = ({ token }) => {
         <div className="lg:col-span-2 bg-black rounded-2xl overflow-hidden min-h-[400px] flex items-center justify-center border border-slate-700 shadow-2xl relative">
           {streamUrl ? (
             <>
-              <img
+              <iframe
                 src={streamUrl}
-                alt="Stream"
-                className="w-full h-full object-contain"
+                title="MJPEG Stream"
+                className="w-full h-full border-0"
+                frameBorder="0"
                 onError={() => setIsPlaying(false)}
               />
               <div className="absolute top-4 left-4 bg-purple-600 px-3 py-1 rounded-full text-xs font-bold text-white shadow-lg flex items-center gap-2">

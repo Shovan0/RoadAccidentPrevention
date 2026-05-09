@@ -29,6 +29,7 @@ try:
     from db_utils import update_driver_contact_by_plate as _update_contact
 except Exception:
     _update_contact = None
+
 # Notifier helpers (Twilio SMS only)
 try:
     from notify import send_sms as _send_sms, send_twilio_sms as _send_twilio
@@ -54,6 +55,359 @@ def generate_virtual_simulation(
     distance_meters: float = 20.0,
     record_config=None,
 ):
+
+    vehicles = []
+    vehicle_counter = 0
+    all_logs = []
+    overspeed_logs = []
+    frame_idx = 0
+
+    # ─────────────────────────────────────────────
+    # LOAD DB PLATES
+    # ─────────────────────────────────────────────
+    db_plates = []
+
+    if _DB_AVAILABLE:
+        try:
+            db_plates = get_all_car_numbers()
+            print(f"[DB] Loaded {len(db_plates)} plates")
+        except Exception as e:
+            print(f"[DB ERROR] {e}")
+
+    _plate_pool = list(db_plates)
+
+    # ─────────────────────────────────────────────
+    # STATIC ROAD
+    # ─────────────────────────────────────────────
+    _road_template = np.zeros((H, W, 3), dtype=np.uint8)
+    draw_road(_road_template, distance_meters)
+
+    try:
+
+        while True:
+
+            frame_idx += 1
+
+            frame = _road_template.copy()
+
+            # ─────────────────────────────────────────────
+            # SPAWN VEHICLES
+            # ─────────────────────────────────────────────
+            if random.random() < 0.04:
+
+                lane_choice = random.randint(0, len(LANES_X) - 1)
+
+                lane_vehicles = [
+                    v for v in vehicles
+                    if v.lane == lane_choice
+                ]
+
+                # allow spawn only if enough gap exists
+                can_spawn = True
+
+                for lv in lane_vehicles:
+                    if lv.y > H - 250:
+                        can_spawn = False
+                        break
+
+                if can_spawn:
+
+                    vehicle_counter += 1
+
+                    assigned_plate = None
+
+                    if _plate_pool:
+                        assigned_plate = _plate_pool[
+                            (vehicle_counter - 1) % len(_plate_pool)
+                        ]
+
+                    vehicle = VirtualVehicle(
+                        vehicle_counter,
+                        lane_choice,
+                        LANES_X[lane_choice],
+                        overspeed_limit_kmh,
+                        plate=assigned_plate,
+                    )
+
+                    # SPAWN BELOW FRAME
+                    vehicle.y = H + random.randint(40, 180)
+
+                    # RANDOM REALISTIC SPEED
+                    speed_kmh = random.randint(25, 90)
+
+                    # convert km/h → pixels/frame
+                    vehicle.current_speed = speed_kmh / 12
+
+                    # store actual speed
+                    vehicle.real_speed_kmh = speed_kmh
+
+                    vehicles.append(vehicle)
+
+            # ─────────────────────────────────────────────
+            # UPDATE VEHICLES
+            # ─────────────────────────────────────────────
+            for v in vehicles:
+
+                # MOVE VEHICLE
+                v.update()
+
+                v_bottom = v.y + v.h
+
+                # START LINE
+                if (
+                    v.start_frame is None
+                    and v_bottom <= START_LINE_Y
+                ):
+                    v.start_frame = frame_idx
+                    v.start_y = v_bottom
+
+                # END LINE
+                if (
+                    v.start_frame is not None
+                    and v.end_frame is None
+                    and v_bottom <= END_LINE_Y
+                ):
+
+                    v.end_frame = frame_idx
+                    v.end_y = v_bottom
+
+                    frames_taken = (
+                        v.end_frame - v.start_frame
+                    )
+
+                    if frames_taken > 0:
+                        # Calculate speed from pixel distance traveled
+                        pixel_distance = abs((v.start_y or 0) - (v.end_y or 0))
+                        pixel_span = abs(START_LINE_Y - END_LINE_Y) or 1
+                        meters_per_pixel = distance_meters / pixel_span
+                        measured_meters = pixel_distance * meters_per_pixel
+                        time_seconds = frames_taken / SIM_FPS
+                        
+                        v.detected_speed = round(
+                            (measured_meters / time_seconds) * 3.6,
+                            1
+                        )
+
+                        v.is_overspeed = (
+                            v.detected_speed > overspeed_limit_kmh
+                        )
+
+                        if (
+                            v.is_overspeed
+                            and not v.plate_captured
+                        ):
+
+                            v.scan_start_frame = frame_idx
+                            v.plate_captured = True
+
+                            print(
+                                f"[VIOLATION] "
+                                f"{v.plate} "
+                                f"{v.detected_speed} km/h"
+                            )
+
+                        log_entry = {
+                            "id": v.id,
+                            "plate": v.plate,
+                            "label": v.type,
+                            "speed": v.detected_speed,
+                            "frame": frame_idx,
+                            "overspeed": v.is_overspeed,
+                        }
+
+                        if v.is_overspeed:
+
+                            details = _safe_get_vehicle_details(v.plate)
+
+                            log_entry["driver_name"] = (
+                                details.get("driver_name") or "N/A"
+                            )
+
+                            log_entry["driver_contact"] = (
+                                details.get("driver_contact") or "N/A"
+                            )
+
+                            try:
+
+                                body = (
+                                    f"ALERT: Vehicle {v.plate} "
+                                    f"detected at "
+                                    f"{v.detected_speed} km/h"
+                                )
+
+                                phone = details.get(
+                                    "driver_contact"
+                                )
+
+                                if phone and _send_twilio:
+
+                                    _send_twilio(phone, body)
+
+                            except Exception as e:
+                                print(e)
+
+                            overspeed_logs.append(log_entry)
+
+                        all_logs.append(log_entry)
+
+                # DRAW VEHICLE
+                v.draw(frame, frame_idx)
+
+            # ─────────────────────────────────────────────
+            # REMOVE OFFSCREEN VEHICLES
+            # ─────────────────────────────────────────────
+            vehicles = [
+                v for v in vehicles
+                if v.y > -300
+            ]
+
+            # ─────────────────────────────────────────────
+            # VIOLATION PANEL
+            # ─────────────────────────────────────────────
+            recent = overspeed_logs[-5:]
+
+            if recent:
+
+                panel_x = W - 280
+
+                panel_h = 24 + 52 * len(recent)
+
+                cv2.rectangle(
+                    frame,
+                    (panel_x - 6, 44),
+                    (W - 4, 44 + panel_h),
+                    (0, 0, 0),
+                    -1,
+                )
+
+                cv2.rectangle(
+                    frame,
+                    (panel_x - 6, 44),
+                    (W - 4, 44 + panel_h),
+                    (0, 30, 200),
+                    2,
+                )
+
+                cv2.putText(
+                    frame,
+                    "VIOLATIONS",
+                    (panel_x, 63),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55,
+                    (80, 80, 255),
+                    2,
+                )
+
+                for i, viol in enumerate(reversed(recent)):
+
+                    by = 72 + i * 50
+
+                    cv2.rectangle(
+                        frame,
+                        (panel_x - 2, by),
+                        (W - 8, by + 46),
+                        (22, 0, 0),
+                        -1,
+                    )
+
+                    cv2.putText(
+                        frame,
+                        f"{viol['plate']}",
+                        (panel_x, by + 16),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.45,
+                        (255, 255, 255),
+                        1,
+                    )
+
+                    cv2.putText(
+                        frame,
+                        f"{viol['speed']} km/h",
+                        (panel_x, by + 36),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.45,
+                        (0, 255, 255),
+                        1,
+                    )
+
+            # ─────────────────────────────────────────────
+            # TOP BAR
+            # ─────────────────────────────────────────────
+            cv2.rectangle(
+                frame,
+                (0, 0),
+                (W, 40),
+                (0, 0, 0),
+                -1,
+            )
+
+            cv2.putText(
+                frame,
+                (
+                    f"LIVE SIMULATION | "
+                    f"Detected: {len(all_logs)} | "
+                    f"Violations: {len(overspeed_logs)} | "
+                    f"Limit: {overspeed_limit_kmh} km/h"
+                ),
+                (12, 27),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.65,
+                (255, 255, 255),
+                2,
+            )
+
+            # ─────────────────────────────────────────────
+            # CALLBACK
+            # ─────────────────────────────────────────────
+            if (
+                record_config
+                and record_config.get("live_callback")
+            ):
+
+                count = len(all_logs)
+
+                avg = (
+                    sum(lg["speed"] for lg in all_logs) / count
+                    if count else 0
+                )
+
+                mx = max(
+                    (lg["speed"] for lg in all_logs),
+                    default=0
+                )
+
+                record_config["live_callback"]({
+                    "total_vehicles": count,
+                    "total_violations": len(overspeed_logs),
+                    "avg_speed": round(avg, 1),
+                    "max_speed": round(mx, 1),
+                    "all_logs": all_logs,
+                    "overspeed_summary": overspeed_logs,
+                })
+
+            # ─────────────────────────────────────────────
+            # ENCODE FRAME
+            # ─────────────────────────────────────────────
+            ok, enc = cv2.imencode(
+                ".jpg",
+                frame,
+                [cv2.IMWRITE_JPEG_QUALITY, 82]
+            )
+
+            if not ok:
+                continue
+
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + bytearray(enc)
+                + b"\r\n"
+            )
+
+            time.sleep(1.0 / SIM_FPS)
+
+    except Exception as exc:
+        print(f"[Simulation Error] {exc}")
     """
     Generator — yields MJPEG boundary frames for a synthetic top-down simulation.
 
@@ -77,20 +431,15 @@ def generate_virtual_simulation(
     if not db_plates:
         print("[DB] No plates in DB — vehicles will use randomly generated plates.")
 
-    # If you updated a driver's contact in the DB to your phone number,
-    # place that car so it will be assigned to the 5th spawned vehicle.
     TARGET_PHONE = os.getenv('TARGET_PHONE', '9007074039')
-    _plate_pool = list(db_plates)  # mutable copy for cycling
+    _plate_pool = list(db_plates)
     user_plate = None
     try:
-        # find plates matching the target phone
         matching = [p for p in _plate_pool if _safe_get_vehicle_details(p).get('driver_contact') == TARGET_PHONE]
         if matching:
             user_plate = matching[0]
-            # ensure pool length >= 5 by repeating entries if needed
             while len(_plate_pool) < 5:
                 _plate_pool.extend(list(db_plates))
-            # move user_plate to index 4 (so vehicle_counter==5 uses it)
             if user_plate in _plate_pool:
                 _plate_pool.remove(user_plate)
                 _plate_pool.insert(4, user_plate)
@@ -98,10 +447,34 @@ def generate_virtual_simulation(
     except Exception as _e:
         print(f"[DB] Could not arrange plate pool for target phone: {_e}")
 
-    # Optional: pre-draw the static road into a template so we can copy it
-    # each frame instead of re-drawing from scratch (minor optimisation).
+    # Pre-draw the static road template once
     _road_template = np.zeros((H, W, 3), dtype=np.uint8)
     draw_road(_road_template, distance_meters)
+
+    # Ensure at least one vehicle is present at simulation start so it's visible
+    if not vehicles:
+        vehicle_counter += 1
+        if _plate_pool:
+            assigned_plate = _plate_pool[(vehicle_counter - 1) % len(_plate_pool)]
+        else:
+            assigned_plate = None
+        # spawn one vehicle in the middle lane to be visible immediately
+        mid_lane = min(len(LANES_X) - 1, max(0, len(LANES_X) // 2))
+        vehicles.append(
+            VirtualVehicle(
+                vehicle_counter, mid_lane,
+                LANES_X[mid_lane], overspeed_limit_kmh,
+                plate=assigned_plate,
+            )
+        )
+        # place this initial vehicle just inside the frame so it's visible immediately
+        try:
+            vehicles[-1].y = float(H - 60)
+        except Exception:
+            pass
+
+    # ── Speed pattern defined ONCE, outside all loops ────────────────
+    speed_pattern = [30, 40, 20]  # km/h
 
     try:
         while True:
@@ -117,9 +490,7 @@ def generate_virtual_simulation(
                 is_clear = all(v.lane != lane_choice for v in vehicles)
                 if is_clear:
                     vehicle_counter += 1
-                    # Make every 5th vehicle overspeed
                     should_overspeed = (vehicle_counter % 5 == 0)
-                    # Pick next plate from the DB pool; fall back to random
                     if _plate_pool:
                         assigned_plate = _plate_pool[(vehicle_counter - 1) % len(_plate_pool)]
                     else:
@@ -133,54 +504,56 @@ def generate_virtual_simulation(
                         )
                     )
 
-            # ── 3. UPDATE VEHICLES (no overtaking — slow down behind car ahead)
+            # ── 3. UPDATE & DRAW ALL VEHICLES ─────────────────────────────────
             for v in vehicles:
-                # Find the closest vehicle ahead in the same lane
-                ahead, min_dist = None, 1000
-                for other in vehicles:
-                    if other.id != v.id and other.lane == v.lane and other.y < v.y:
-                        d = v.y - (other.y + other.h)
-                        if d < min_dist:
-                            min_dist, ahead = d, other
 
-                if ahead and min_dist < 80:
-                    # No overtaking — just slow down to match car ahead
-                    v.current_speed = max(ahead.current_speed - 0.5, 0)
-                else:
-                    if v.current_speed < v.base_speed:
-                        v.current_speed += 0.2
+                # ── Controlled speed (cycles every 1 second) ──────────────────
+                pattern_index = (frame_idx // SIM_FPS) % len(speed_pattern)
+                controlled_speed = speed_pattern[pattern_index]
 
+                # Convert km/h → pixels/frame  (tune the 0.6 scalar if needed)
+                pixel_speed = controlled_speed / 3.6 * 0.6
+                v.current_speed = pixel_speed
+
+                # Move vehicle
                 v.update()
 
-                # ── SPEED DETECTION BETWEEN TRAP LINES ──
+                # ── SPEED DETECTION BETWEEN TRAP LINES ───────────────────────
                 v_bottom = v.y + v.h
+
                 if v.start_frame is None and v_bottom <= START_LINE_Y:
                     v.start_frame = frame_idx
+                    v.start_bottom = v_bottom
 
                 if v.start_frame is not None and v.end_frame is None and v_bottom <= END_LINE_Y:
                     v.end_frame = frame_idx
+                    v.end_bottom = v_bottom
                     frames_taken = abs(v.end_frame - v.start_frame)
                     if frames_taken > 0:
                         time_sec = frames_taken / SIM_FPS
-                        v.detected_speed = round((distance_meters / time_sec) * 3.6, 1)
+
+                        # Compute distance travelled in pixels between the two trap lines
+                        pixel_distance = abs((v.start_bottom or 0) - (v.end_bottom or 0))
+                        # Convert pixels -> meters using the known distance between trap lines
+                        pixel_span = abs(START_LINE_Y - END_LINE_Y) or 1
+                        meters_per_pixel = distance_meters / pixel_span
+                        measured_m = pixel_distance * meters_per_pixel
+
+                        v.detected_speed = round((measured_m / time_sec) * 3.6, 1)
                         v.is_overspeed = v.detected_speed > overspeed_limit_kmh
 
-                        # Enforce: if this vehicle is the user's plate (placed as 5th),
-                        # set its detected speed to exactly 50 km/h. Ensure all other
-                        # vehicles remain under 50 km/h.
+                        # Force user plate to exactly 50 km/h; clamp others below 50
                         try:
                             if user_plate and v.plate == user_plate:
                                 v.detected_speed = 50.0
                                 v.is_overspeed = v.detected_speed > overspeed_limit_kmh
                             else:
-                                # clamp others to below 50 km/h
                                 if v.detected_speed >= 50.0:
                                     v.detected_speed = 49.9
                                     v.is_overspeed = v.detected_speed > overspeed_limit_kmh
                         except Exception:
                             pass
 
-                        # Plate is already known — no OCR needed
                         if v.is_overspeed and not v.plate_captured:
                             v.scan_start_frame = frame_idx
                             v.plate_captured = True
@@ -209,7 +582,8 @@ def generate_virtual_simulation(
                             log_entry["vehicle_make"]   = details.get("make")           or "N/A"
                             log_entry["vehicle_model"]  = details.get("model")          or "N/A"
                             log_entry["vehicle_color"]  = details.get("color")          or "N/A"
-                            # Send a real-time notification via Twilio to the driver's phone
+
+                            # Send real-time Twilio SMS to the driver
                             try:
                                 body = (
                                     f"ALERT: Vehicle {v.plate} detected at {v.detected_speed} km/h "
@@ -224,9 +598,6 @@ def generate_virtual_simulation(
                                             print(f"[NOTIFY] Twilio SMS sent to driver {driver_phone} for plate={v.plate}")
                                     except Exception as _fberr:
                                         print(f"[NOTIFY] Twilio SMS failed: {_fberr}")
-
-                                # Additionally, attempt a voice call to the driver phone stored in DB (if configured)
-                                # Voice call support removed — only SMS is sent
                             except Exception as _nerr:
                                 print(f"[NOTIFY] notification send failed: {_nerr}")
 
@@ -234,9 +605,10 @@ def generate_virtual_simulation(
                         if v.is_overspeed:
                             overspeed_logs.append(log_entry)
 
-                # Draw vehicle on top of static road
+                # ── Draw this vehicle onto the frame ──────────────────────────
                 v.draw(frame, frame_idx)
 
+            # Remove vehicles that have left the frame
             vehicles = [v for v in vehicles if v.active]
 
             # ── 4. VIOLATION PANEL (right-side overlay) ───────────────────────

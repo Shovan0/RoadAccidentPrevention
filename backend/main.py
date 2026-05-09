@@ -32,7 +32,7 @@ os.makedirs(HISTORY_DIR, exist_ok=True)
 
 app = Flask(__name__)
 CORS(app)
-app.config["JWT_SECRET_KEY"] = "your-secret-key"
+app.config["JWT_SECRET_KEY"] = "final-year-project"  
 jwt = JWTManager(app)
 
 HISTORY_FILE = os.path.join(HISTORY_DIR, "processing_history.json")
