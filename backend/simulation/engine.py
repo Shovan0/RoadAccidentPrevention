@@ -18,11 +18,12 @@ if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
 try:
-    from database import get_all_car_numbers, get_vehicle_details as _db_get_details
+    from database import get_all_car_numbers, get_vehicle_details as _db_get_details, save_violation_log as _save_violation_log
     _DB_AVAILABLE = True
 except Exception as _db_import_err:
     print(f"[DB] Could not import database module: {_db_import_err}")
     _DB_AVAILABLE = False
+    _save_violation_log = None
 
 # Optional: update helper to change driver contact when violation occurs
 try:
@@ -192,19 +193,9 @@ def generate_virtual_simulation(
                             v.detected_speed > overspeed_limit_kmh
                         )
 
-                        if (
-                            v.is_overspeed
-                            and not v.plate_captured
-                        ):
-
+                        if v.is_overspeed and not v.plate_captured:
                             v.scan_start_frame = frame_idx
                             v.plate_captured = True
-
-                            print(
-                                f"[VIOLATION] "
-                                f"{v.plate} "
-                                f"{v.detected_speed} km/h"
-                            )
 
                         log_entry = {
                             "id": v.id,
@@ -216,35 +207,32 @@ def generate_virtual_simulation(
                         }
 
                         if v.is_overspeed:
-
                             details = _safe_get_vehicle_details(v.plate)
+                            log_entry["driver_name"] = details.get("driver_name") or "N/A"
+                            log_entry["driver_contact"] = details.get("driver_contact") or "N/A"
+                            log_entry["owner_name"] = details.get("owner_name") or "N/A"
+                            log_entry["owner_contact"] = details.get("owner_contact") or "N/A"
+                            log_entry["vehicle_make"] = details.get("make") or "N/A"
+                            log_entry["vehicle_model"] = details.get("model") or "N/A"
 
-                            log_entry["driver_name"] = (
-                                details.get("driver_name") or "N/A"
-                            )
-
-                            log_entry["driver_contact"] = (
-                                details.get("driver_contact") or "N/A"
-                            )
-
-                            try:
-
-                                body = (
-                                    f"ALERT: Vehicle {v.plate} "
-                                    f"detected at "
-                                    f"{v.detected_speed} km/h"
-                                )
-
-                                phone = details.get(
-                                    "driver_contact"
-                                )
-
-                                if phone and _send_twilio:
-
-                                    _send_twilio(phone, body)
-
-                            except Exception as e:
-                                print(e)
+                            # Save violation to DB if available
+                            if _DB_AVAILABLE and _save_violation_log:
+                                try:
+                                    saved = _save_violation_log(
+                                        plate=v.plate or f"SIM_{v.id}",
+                                        vehicle_type=v.type,
+                                        speed=v.detected_speed,
+                                        driver_name=log_entry.get("driver_name"),
+                                        driver_contact=log_entry.get("driver_contact"),
+                                        owner_name=log_entry.get("owner_name"),
+                                        owner_contact=log_entry.get("owner_contact"),
+                                    )
+                                    if saved:
+                                        print(f"✅ [DB] Saved simulation violation: {v.plate} at {v.detected_speed} km/h")
+                                    else:
+                                        print(f"❌ [DB] Failed to save simulation violation: {v.plate}")
+                                except Exception as _serr:
+                                    print(f"❌ [DB] Error saving simulation violation: {_serr}")
 
                             overspeed_logs.append(log_entry)
 

@@ -70,7 +70,7 @@ class SpeedTracker:
 
 
 # ================= FRAME GENERATOR =================
-def generate_frames(video_path, overspeed_limit_kmh=60, record_config=None):
+def generate_frames(video_path, overspeed_limit_kmh=60, distance_meters=20, record_config=None):
     if not video_path or not os.path.isfile(video_path):
         print(f"Video not found: {video_path}")
         return
@@ -80,6 +80,12 @@ def generate_frames(video_path, overspeed_limit_kmh=60, record_config=None):
     W, H = 1280, 720
 
     tracker = SpeedTracker(fps)
+    # Trap line positions (match simulation ratios)
+    START_LINE_Y = int(H * 0.74)
+    END_LINE_Y = int(H * 0.26)
+
+    # Per-object crossing state
+    obj_state = {}
 
     out = None
     all_logs = []
@@ -92,14 +98,19 @@ def generate_frames(video_path, overspeed_limit_kmh=60, record_config=None):
 
     target_classes = [2, 3, 5, 7]  # car, motorcycle, bus, truck
     frame_idx = 0
+    # If requested, first preprocess entire video to output_path, then stream it.
+    preprocess_first = bool(record_config and record_config.get("preprocess_first"))
 
-    try:
+    def process_loop(do_write=True):
+        nonlocal all_logs, overspeed_summary
+        local_frame_idx = 0
+        cap_local = cv2.VideoCapture(video_path)
         while True:
-            ret, frame = cap.read()
+            ret, frame = cap_local.read()
             if not ret:
                 break
 
-            frame_idx += 1
+            local_frame_idx += 1
             frame = cv2.resize(frame, (W, H))
             annotated = frame.copy()
 
@@ -125,41 +136,75 @@ def generate_frames(video_path, overspeed_limit_kmh=60, record_config=None):
                     # Bottom-center point
                     bx, by = (x1 + x2) // 2, y2
 
-                    # 🔥 NEW SPEED CALCULATION
-                    speed_kmh = tracker.update(obj_id, bx, by, frame_idx)
+                    # Initialize object state
+                    st = obj_state.setdefault(obj_id, {
+                        "start_frame": None,
+                        "start_y": None,
+                        "end_frame": None,
+                        "end_y": None,
+                        "plate_captured": False,
+                    })
 
-                    log_entry = {
-                        "id": obj_id,
-                        "label": label,
-                        "speed": round(speed_kmh, 1),
-                        "frame": frame_idx,
-                        "overspeed": speed_kmh > overspeed_limit_kmh,
-                    }
+                    # Check for crossing start/stop trap lines (moving upward)
+                    if st["start_frame"] is None and by <= START_LINE_Y:
+                        st["start_frame"] = local_frame_idx
+                        st["start_y"] = by
 
-                    if not any(l["id"] == obj_id for l in all_logs):
-                        all_logs.append(log_entry)
-                        if log_entry["overspeed"]:
-                            overspeed_summary.append(log_entry)
+                    if st["start_frame"] is not None and st["end_frame"] is None and by <= END_LINE_Y:
+                        st["end_frame"] = local_frame_idx
+                        st["end_y"] = by
 
-                    # Draw
-                    color = (0, 0, 255) if speed_kmh > overspeed_limit_kmh else (0, 255, 0)
+                        # Compute speed using pixel distance between trap lines + known meters
+                        frames_taken = st["end_frame"] - st["start_frame"]
+                        if frames_taken > 0:
+                            pixel_distance = abs((st.get("start_y") or 0) - (st.get("end_y") or 0))
+                            pixel_span = abs(START_LINE_Y - END_LINE_Y) or 1
+                            meters_per_pixel = distance_meters / pixel_span
+                            measured_meters = pixel_distance * meters_per_pixel
+                            time_seconds = frames_taken / fps if fps else frames_taken / 30.0
+                            speed_kmh = (measured_meters / time_seconds) * 3.6 if time_seconds > 0 else 0
+                        else:
+                            speed_kmh = 0
 
+                        log_entry = {
+                            "id": obj_id,
+                            "label": label,
+                            "speed": round(speed_kmh, 1),
+                            "frame": local_frame_idx,
+                            "overspeed": speed_kmh > overspeed_limit_kmh,
+                        }
+
+                        if not any(l["id"] == obj_id for l in all_logs):
+                            all_logs.append(log_entry)
+                            if log_entry["overspeed"]:
+                                overspeed_summary.append(log_entry)
+
+                    # Draw bounding box and speed if available
+                    # Attempt to show smoothed speed if previously computed
+                    display_speed = None
+                    # find any existing log speed for this id
+                    for l in reversed(all_logs):
+                        if l["id"] == obj_id:
+                            display_speed = l.get("speed")
+                            break
+
+                    color = (0, 0, 255) if (display_speed or 0) > overspeed_limit_kmh else (0, 255, 0)
                     cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+                    if display_speed is not None:
+                        cv2.putText(
+                            annotated,
+                            f"{int(display_speed)} km/h",
+                            (x1, y1 - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.6,
+                            color,
+                            2,
+                        )
 
-                    cv2.putText(
-                        annotated,
-                        f"{int(speed_kmh)} km/h",
-                        (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6,
-                        color,
-                        2,
-                    )
-
-            if out:
+            if do_write and out:
                 out.write(annotated)
 
-            # Live stats
+            # Live stats callback
             if record_config and record_config.get("live_callback"):
                 count = len(all_logs)
                 avg = sum(l["speed"] for l in all_logs) / count if count else 0
@@ -174,15 +219,50 @@ def generate_frames(video_path, overspeed_limit_kmh=60, record_config=None):
                     "overspeed_summary": overspeed_summary,
                 })
 
+            # If streaming while processing, yield encoded frame
             flag, enc = cv2.imencode(".jpg", annotated)
             if not flag:
                 continue
 
-            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + bytearray(enc) + b"\r\n"
+            yield_frame = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + bytearray(enc) + b"\r\n"
+            yield yield_frame
 
+        cap_local.release()
+
+    if preprocess_first and out:
+        # 1) Process and write all frames to output_path without yielding
+        print("[PROCESS] Preprocessing entire video before streaming...")
+        for _ in process_loop(do_write=True):
+            # process_loop yields frames; discard them during preprocessing
+            pass
+
+        # Call data callback after preprocessing
+        if record_config and record_config.get("data_callback"):
+            record_config["data_callback"]({
+                "all_logs": all_logs,
+                "overspeed_summary": overspeed_summary,
+            })
+
+        # 2) Stream the written output file
+        stream_cap = cv2.VideoCapture(record_config["output_path"])
+        while True:
+            ret2, f2 = stream_cap.read()
+            if not ret2:
+                break
+            f2 = cv2.resize(f2, (W, H))
+            ok2, enc2 = cv2.imencode('.jpg', f2)
+            if not ok2:
+                continue
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + bytearray(enc2) + b"\r\n"
+        stream_cap.release()
+        return
+
+    # Default: process and stream frames live
+    try:
+        for frame_bytes in process_loop(do_write=bool(out)):
+            yield frame_bytes
     except Exception as e:
         print(f"Error: {e}")
-
     finally:
         cap.release()
         if out:

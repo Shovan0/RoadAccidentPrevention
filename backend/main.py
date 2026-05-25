@@ -11,7 +11,7 @@ import bcrypt
 # Import both generators
 from process_video import generate_frames, generate_virtual_simulation
 # DB helpers
-from database import get_all_registered_cars, get_vehicle_details, get_user_by_username, seed_default_users
+from database import get_all_registered_cars, get_vehicle_details, get_user_by_username, seed_default_users, save_violation_log, get_all_violation_logs, get_violation_logs_by_plate
 # Load .env if present and notification helpers
 from dotenv import load_dotenv
 load_dotenv()
@@ -34,6 +34,25 @@ app = Flask(__name__)
 CORS(app)
 app.config["JWT_SECRET_KEY"] = "final-year-project"  
 jwt = JWTManager(app)
+
+
+# Better JWT error responses to avoid opaque 422s and log concise messages
+@jwt.unauthorized_loader
+def _jwt_missing_callback(callback):
+    print("[JWT] Missing or malformed Authorization header")
+    return jsonify({"error": "Missing Authorization Header"}), 401
+
+
+@jwt.invalid_token_loader
+def _jwt_invalid_callback(reason):
+    print(f"[JWT] Invalid token: {reason}")
+    return jsonify({"error": "Invalid token", "message": reason}), 401
+
+
+@jwt.expired_token_loader
+def _jwt_expired_callback(jwt_header, jwt_payload):
+    print("[JWT] Token expired")
+    return jsonify({"error": "Token has expired"}), 401
 
 HISTORY_FILE = os.path.join(HISTORY_DIR, "processing_history.json")
 STREAM_STATS = {}
@@ -116,7 +135,7 @@ def status(fname):
 @app.route("/video_feed/<fname>")
 def feed(fname):
     limit = float(request.args.get('limit', 60))
-    dist = float(request.args.get('dist', 20))
+    # 'dist' / line distance removed — not used anymore
     save = request.args.get('save', 'false') == 'true'
     user = request.args.get('user', 'anonymous')
     
@@ -124,7 +143,7 @@ def feed(fname):
     if fname == "virtual_simulation":
         def on_live_virtual(s): STREAM_STATS["virtual_simulation"] = s
         return Response(
-            generate_virtual_simulation(overspeed_limit_kmh=limit, distance_meters=dist, record_config={"live_callback": on_live_virtual}),
+            generate_virtual_simulation(overspeed_limit_kmh=limit, record_config={"live_callback": on_live_virtual}),
             mimetype='multipart/x-mixed-replace; boundary=frame'
         )
 
@@ -144,17 +163,40 @@ def feed(fname):
                 "id": str(uuid.uuid4()), "timestamp": datetime.now().isoformat(),
                 "user": user, "original_filename": name,
                 "input_video_path": path, "output_video_path": out_path,
-                "download_name": out_name, "overspeed_limit": limit, "distance_meters": dist,
+                "download_name": out_name, "overspeed_limit": limit,
                 "total_vehicles": len(d["all_logs"]), "total_violations": len(d["overspeed_summary"]),
                 "overspeed_summary": d["overspeed_summary"], "all_logs": d["all_logs"]
             }
+            # Save each violation to the database
+            for violation in d["overspeed_summary"]:
+                try:
+                    vehicle_type = violation.get("label", "Unknown")
+                    speed = violation.get("speed", 0)
+                    # Use plate if available, otherwise use tracking ID
+                    plate = violation.get("plate", f"TRACKED_{violation.get('id', 'unknown')}")
+                    
+                    save_violation_log(
+                        plate=plate,
+                        vehicle_type=vehicle_type,
+                        speed=speed,
+                        driver_name=violation.get("driver_name"),
+                        driver_contact=violation.get("driver_contact"),
+                        owner_name=violation.get("owner_name"),
+                        owner_contact=violation.get("owner_contact")
+                    )
+                    print(f"✅ [DB] Saved violation: {plate} at {speed} km/h")
+                except Exception as e:
+                    print(f"⚠️  Failed to save violation: {e}")
             h = load_history()
             h.append(rec)
             save_history(h)
             if name in STREAM_STATS: del STREAM_STATS[name]
         cfg.update({"output_path": out_path, "data_callback": on_done})
+        # Allow client to request full preprocessing before streaming by adding ?preprocess=true
+        if request.args.get('preprocess', 'false').lower() == 'true':
+            cfg.update({"preprocess_first": True})
         
-    return Response(generate_frames(path, limit, dist, cfg), mimetype='multipart/x-mixed-replace; boundary=frame')
+    return Response(generate_frames(path, limit, record_config=cfg), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route("/download/<fname>", methods=["GET"])
 def dl(fname):
@@ -184,6 +226,96 @@ def vehicle_details(plate):
         return jsonify(details), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/violations", methods=["GET"])
+@jwt_required()
+def get_violations():
+    """Return all violation logs from the database."""
+    try:
+        violations = get_all_violation_logs()
+        return jsonify(violations), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/violations/<plate>", methods=["GET"])
+@jwt_required()
+def get_violations_by_plate(plate):
+    """Return all violations for a specific plate."""
+    try:
+        violations = get_violation_logs_by_plate(plate)
+        return jsonify(violations), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/test-violation", methods=["POST"])
+def test_violation():
+    """Test endpoint to manually insert a violation (for debugging)."""
+    try:
+        data = request.get_json() or {}
+        plate = data.get("plate", "TEST_PLATE")
+        vehicle_type = data.get("vehicle_type", "Test Car")
+        speed = float(data.get("speed", 85.0))
+        driver_name = data.get("driver_name")
+        driver_contact = data.get("driver_contact")
+        owner_name = data.get("owner_name")
+        owner_contact = data.get("owner_contact")
+        
+        result = save_violation_log(
+            plate=plate,
+            vehicle_type=vehicle_type,
+            speed=speed,
+            driver_name=driver_name,
+            driver_contact=driver_contact,
+            owner_name=owner_name,
+            owner_contact=owner_contact
+        )
+        
+        if result:
+            return jsonify({"success": True, "message": f"Violation recorded for {plate}"}), 201
+        else:
+            return jsonify({"success": False, "message": "Failed to save violation"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/save-simulation-violations", methods=["POST"])
+def save_simulation_violations():
+    """Save violations from completed simulation to the database."""
+    try:
+        data = request.get_json() or {}
+        violations = data.get("violations", [])
+        saved_count = 0
+        
+        for violation in violations:
+            try:
+                plate = violation.get("plate", f"SIM_VIO_{violation.get('id', 'unknown')}")
+                vehicle_type = violation.get("label", violation.get("vehicle_type", "Unknown"))
+                speed = float(violation.get("speed", 0))
+                
+                result = save_violation_log(
+                    plate=plate,
+                    vehicle_type=vehicle_type,
+                    speed=speed,
+                    driver_name=violation.get("driver_name"),
+                    driver_contact=violation.get("driver_contact"),
+                    owner_name=violation.get("owner_name"),
+                    owner_contact=violation.get("owner_contact")
+                )
+                
+                if result:
+                    saved_count += 1
+            except Exception as e:
+                print(f"⚠️  Failed to save simulation violation: {e}")
+        
+        return jsonify({
+            "success": True, 
+            "message": f"Saved {saved_count} out of {len(violations)} violations"
+        }), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @app.route("/api/test-notify", methods=["GET", "POST"])

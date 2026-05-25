@@ -17,7 +17,7 @@ const LogTable = ({ title, data, icon, color, showPlate = false, showDetails = f
             {showDetails && <th className="px-3 py-2">Driver</th>}
             {showDetails && <th className="px-3 py-2">Contact</th>}
             {showDetails && <th className="px-3 py-2">Owner</th>}
-            {showDetails && <th className="px-3 py-2">Vehicle</th>}
+            {showDetails && <th className="px-3 py-2">Owner Contact</th>}
           </tr>
         </thead>
         <tbody>
@@ -43,10 +43,8 @@ const LogTable = ({ title, data, icon, color, showPlate = false, showDetails = f
                 </td>
               )}
               {showDetails && (
-                <td className="px-3 py-2 text-slate-300">
-                  {log.vehicle_make && log.vehicle_model
-                    ? `${log.vehicle_make} ${log.vehicle_model}`
-                    : <span className="text-slate-500 italic">N/A</span>}
+                <td className="px-3 py-2 text-green-300">
+                  {log.owner_contact || <span className="text-slate-500 italic">N/A</span>}
                 </td>
               )}
             </tr>

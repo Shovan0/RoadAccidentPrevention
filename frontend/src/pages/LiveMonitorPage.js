@@ -9,8 +9,41 @@ const LiveMonitorPage = ({ token }) => {
   const [liveStats, setLiveStats] = useState({
     total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: []
   });
-  const [config, setConfig] = useState({ limit: 60 });
+  const [config, setConfig] = useState(() => {
+    // Load config from localStorage on component mount
+    try {
+      const saved = localStorage.getItem('simulationConfig');
+      return saved ? JSON.parse(saved) : { limit: 60 };
+    } catch {
+      return { limit: 60 };
+    }
+  });
   const [isPlaying, setIsPlaying] = useState(false);
+
+  // Save config to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('simulationConfig', JSON.stringify(config));
+  }, [config]);
+
+  // Save stats to localStorage whenever they change
+  useEffect(() => {
+    if (isPlaying) {
+      localStorage.setItem('simulationStats', JSON.stringify(liveStats));
+    }
+  }, [liveStats, isPlaying]);
+
+  // Restore stats from localStorage on component mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('simulationStats');
+      if (saved) {
+        const restoredStats = JSON.parse(saved);
+        setLiveStats(restoredStats);
+      }
+    } catch (err) {
+      console.error('Failed to restore simulation stats:', err);
+    }
+  }, []);
 
   useEffect(() => {
     if (!streamUrl) return;
@@ -18,7 +51,11 @@ const LiveMonitorPage = ({ token }) => {
     const interval = setInterval(() => {
       fetch(`${API_ENDPOINT}/api/stream-status/${filename}`)
         .then(res => res.json())
-        .then(data => setLiveStats(data))
+        .then(data => {
+          setLiveStats(data);
+          // Also save to localStorage for persistence
+          localStorage.setItem('simulationStats', JSON.stringify(data));
+        })
         .catch(err => console.error(err));
     }, 1000);
     return () => clearInterval(interval);
@@ -26,14 +63,48 @@ const LiveMonitorPage = ({ token }) => {
 
   const handleStart = () => {
     setIsPlaying(true);
-    setLiveStats({ total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] });
+    const initialStats = { total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] };
+    setLiveStats(initialStats);
+    localStorage.setItem('simulationStats', JSON.stringify(initialStats));
     const url = `${API_ENDPOINT}/video_feed/virtual_simulation?save=false&limit=${config.limit}`;
     setStreamUrl(url);
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
     setStreamUrl(null);
     setIsPlaying(false);
+    
+    // Save violations to database
+    if (liveStats.overspeed_summary && liveStats.overspeed_summary.length > 0) {
+      try {
+        const response = await fetch(`${API_ENDPOINT}/api/save-simulation-violations`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ violations: liveStats.overspeed_summary })
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          console.log('✅ Simulation violations saved:', result.message);
+        } else {
+          console.warn('⚠️ Failed to save simulation violations');
+        }
+      } catch (err) {
+        console.error('Error saving simulation violations:', err);
+      }
+    }
+    
+    // Keep stats in localStorage even after stopping
+    localStorage.setItem('simulationStats', JSON.stringify(liveStats));
+  };
+
+  const handleClear = () => {
+    const emptyStats = { total_vehicles: 0, total_violations: 0, avg_speed: 0, max_speed: 0, all_logs: [], overspeed_summary: [] };
+    setLiveStats(emptyStats);
+    localStorage.removeItem('simulationStats');
   };
 
   return (
@@ -73,8 +144,17 @@ const LiveMonitorPage = ({ token }) => {
             </button>
           )}
 
+          {(liveStats.total_vehicles > 0 || liveStats.total_violations > 0) && (
+            <button
+              onClick={handleClear}
+              className="w-full mt-2 bg-slate-700 hover:bg-slate-600 py-2 rounded-xl font-semibold text-white transition text-sm"
+            >
+              Clear Data
+            </button>
+          )}
+
           <div className="mt-4 p-3 bg-blue-900/30 text-blue-200 text-xs rounded border border-blue-900/50">
-            This mode generates synthetic traffic data with AI logic: Vehicles spawn in lanes, accelerate, and detection occurs only when crossing start/end lines.
+            ✅ Simulation state is now saved! Your data persists even after navigating away.
           </div>
         </div>
 
