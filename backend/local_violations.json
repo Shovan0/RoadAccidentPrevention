@@ -1,0 +1,22 @@
+[
+  {
+    "plate": "RJ 82 YF 0765",
+    "vehicle_type": "bus",
+    "speed": 60.8,
+    "violation_timestamp": "2026-05-25T18:12:35.304637",
+    "driver_name": "N/A",
+    "driver_contact": "N/A",
+    "owner_name": "N/A",
+    "owner_contact": "N/A"
+  },
+  {
+    "plate": "RJ 82 YF 0765",
+    "vehicle_type": "bus",
+    "speed": 60.8,
+    "violation_timestamp": "2026-05-25T18:12:37.386616",
+    "driver_name": "N/A",
+    "driver_contact": "N/A",
+    "owner_name": "N/A",
+    "owner_contact": "N/A"
+  }
+]
